@@ -83,8 +83,37 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
         TurtleStatus status = TurtleStatus.fromIndex(statusId);
         AppType app = AppType.fromIndex(this.handler.getAppTypeId());
 
+        String statusText;
+        int statusColor;
+        if (app == AppType.NONE) {
+            statusText = "Insert Disk";
+            statusColor = 0xFFAA00;
+        } else if (status == TurtleStatus.NO_TOOL) {
+            if (app == AppType.MINER || app == AppType.QUARRY) {
+                statusText = "Need Pickaxe";
+            } else if (app == AppType.LUMBERJACK) {
+                statusText = "Need Axe";
+            } else if (app == AppType.FARMER) {
+                statusText = "Need Hoe";
+            } else if (app == AppType.SENTRY) {
+                statusText = "Need Sword";
+            } else {
+                statusText = "Need Tool";
+            }
+            statusColor = 0xFFAA00;
+        } else if (status == TurtleStatus.OUT_OF_FUEL) {
+            statusText = "Need Fuel";
+            statusColor = 0xFF5555;
+        } else if (status == TurtleStatus.RUNNING) {
+            statusText = "Running";
+            statusColor = 0x55FF55;
+        } else {
+            statusText = status.getLabel();
+            statusColor = status.getColor();
+        }
+
         // Status text
-        context.drawTextWithShadow(this.textRenderer, Text.literal(status.getLabel()), 40, 24, status.getColor());
+        context.drawTextWithShadow(this.textRenderer, Text.literal(statusText), 40, 24, statusColor);
 
         // Config Distance / Range
         context.drawText(this.textRenderer, Text.literal(this.handler.getConfigDistance() + "m"), 56, 38, 0x333333, false);
@@ -101,5 +130,57 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
         this.drawMouseoverTooltip(context, mouseX, mouseY);
+    }
+
+    @Override
+    protected void drawMouseoverTooltip(DrawContext context, int x, int y) {
+        super.drawMouseoverTooltip(context, x, y);
+
+        int startX = this.x;
+        int startY = this.y;
+
+        // Hover over fuel bar (startX + 40..104, startY + 16..22)
+        if (x >= startX + 40 && x <= startX + 104 && y >= startY + 16 && y <= startY + 22) {
+            int fuel = this.handler.getFuel();
+            int maxFuel = this.handler.getMaxFuel();
+            context.drawTooltip(this.textRenderer, Text.literal("Fuel: " + fuel + " / " + maxFuel), x, y);
+        }
+
+        // Hover over status text (startX + 40..110, startY + 24..33)
+        if (x >= startX + 40 && x <= startX + 110 && y >= startY + 24 && y <= startY + 33) {
+            AppType app = AppType.fromIndex(this.handler.getAppTypeId());
+            TurtleStatus status = TurtleStatus.fromIndex(this.handler.getStatusId());
+            if (app == AppType.NONE) {
+                context.drawTooltip(this.textRenderer, Text.literal("Insert a programmed Floppy Disk to start"), x, y);
+            } else if (status == TurtleStatus.NO_TOOL) {
+                context.drawTooltip(this.textRenderer, Text.literal("Equip required tool in the middle tool slot"), x, y);
+            } else if (status == TurtleStatus.OUT_OF_FUEL) {
+                context.drawTooltip(this.textRenderer, Text.literal("Out of fuel! Insert Coal or Charcoal into fuel slot"), x, y);
+            } else if (status == TurtleStatus.RUNNING) {
+                context.drawTooltip(this.textRenderer, Text.literal("Running: " + app.getDisplayName() + " (" + this.handler.getProgress() + "% complete)"), x, y);
+            } else {
+                context.drawTooltip(this.textRenderer, Text.literal("Status: " + status.getLabel()), x, y);
+            }
+        }
+
+        // Empty slot tooltips
+        if (this.focusedSlot != null && !this.focusedSlot.hasStack()) {
+            if (this.focusedSlot.id == TurtleScreenHandler.DISK_SLOT) {
+                context.drawTooltip(this.textRenderer, java.util.List.of(
+                    Text.literal("§6Program Disk Slot§r"),
+                    Text.literal("§7Insert a Floppy Disk here§r")
+                ), x, y);
+            } else if (this.focusedSlot.id == TurtleScreenHandler.TOOL_SLOT) {
+                context.drawTooltip(this.textRenderer, java.util.List.of(
+                    Text.literal("§6Tool Slot§r"),
+                    Text.literal("§7Insert Pickaxe, Axe, Shovel, or Sword§r")
+                ), x, y);
+            } else if (this.focusedSlot.id == TurtleScreenHandler.FUEL_SLOT) {
+                context.drawTooltip(this.textRenderer, java.util.List.of(
+                    Text.literal("§6Fuel Slot§r"),
+                    Text.literal("§7Insert Coal, Charcoal, or furnace fuel§r")
+                ), x, y);
+            }
+        }
     }
 }

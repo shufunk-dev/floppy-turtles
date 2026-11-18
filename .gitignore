@@ -7,3 +7,5 @@ out/
 *.ipr
 *.iws
 .vscode/
+run/
+logs/

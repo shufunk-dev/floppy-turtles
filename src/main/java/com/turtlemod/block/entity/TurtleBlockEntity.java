@@ -13,7 +13,6 @@ import net.minecraft.block.CropBlock;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.mob.Monster;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventories;
@@ -111,15 +110,43 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     }
 
     public AppType getAppType() {
+        // Check dedicated disk slot (Slot 1)
         ItemStack diskStack = items.get(TurtleScreenHandler.DISK_SLOT);
-        if (diskStack.getItem() instanceof FloppyDiskItem diskItem) {
+        if (diskStack.getItem() instanceof FloppyDiskItem diskItem && diskItem.getAppType() != AppType.NONE) {
             return diskItem.getAppType();
+        }
+        // Fallback: check storage slots (Slots 3-11)
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack s = items.get(i);
+            if (s.getItem() instanceof FloppyDiskItem d && d.getAppType() != AppType.NONE) {
+                return d.getAppType();
+            }
         }
         return AppType.NONE;
     }
 
     public ItemStack getToolStack() {
-        return items.get(TurtleScreenHandler.TOOL_SLOT);
+        // Check dedicated tool slot (Slot 2)
+        ItemStack tool = items.get(TurtleScreenHandler.TOOL_SLOT);
+        if (!tool.isEmpty()) return tool;
+
+        // Fallback: check storage slots (Slots 3-11) for any tool
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack s = items.get(i);
+            if (!s.isEmpty() && isToolItem(s)) {
+                return s;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static boolean isToolItem(ItemStack s) {
+        return s.isOf(Items.DIAMOND_PICKAXE) || s.isOf(Items.IRON_PICKAXE) || s.isOf(Items.NETHERITE_PICKAXE)
+                || s.isOf(Items.STONE_PICKAXE) || s.isOf(Items.GOLDEN_PICKAXE) || s.isOf(Items.WOODEN_PICKAXE)
+                || s.isOf(Items.DIAMOND_AXE) || s.isOf(Items.IRON_AXE) || s.isOf(Items.NETHERITE_AXE)
+                || s.isOf(Items.DIAMOND_SHOVEL) || s.isOf(Items.IRON_SHOVEL)
+                || s.isOf(Items.DIAMOND_HOE) || s.isOf(Items.IRON_HOE)
+                || s.isOf(Items.DIAMOND_SWORD) || s.isOf(Items.IRON_SWORD) || s.isOf(Items.NETHERITE_SWORD);
     }
 
     public PropertyDelegate getPropertyDelegate() {
@@ -135,7 +162,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                     }
                     if (this.fuel > 0) {
                         this.status = TurtleStatus.RUNNING;
-                        this.actionCooldown = 5;
+                        this.actionCooldown = 2;
                     } else {
                         this.status = TurtleStatus.OUT_OF_FUEL;
                     }
@@ -175,8 +202,23 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             entity.tryRefuel();
         }
 
-        // Validate floppy disk insertion
         AppType currentApp = entity.getAppType();
+
+        // Auto-start if idle or out-of-fuel and both program and fuel are available
+        if (entity.status == TurtleStatus.IDLE || entity.status == TurtleStatus.OUT_OF_FUEL) {
+            if (currentApp != AppType.NONE) {
+                if (entity.fuel <= 0) {
+                    entity.tryRefuel();
+                }
+                if (entity.fuel > 0) {
+                    entity.status = TurtleStatus.RUNNING;
+                    entity.actionCooldown = 5;
+                    entity.markDirty();
+                }
+            }
+        }
+
+        // If program disk was removed while running, halt to idle
         if (currentApp == AppType.NONE && entity.status == TurtleStatus.RUNNING) {
             entity.status = TurtleStatus.IDLE;
             entity.markDirty();
@@ -212,24 +254,56 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         }
     }
 
-    private void tryRefuel() {
+    public int getFuelGain(ItemStack stack) {
+        if (stack.isEmpty()) return 0;
+        if (stack.isOf(Items.COAL) || stack.isOf(Items.CHARCOAL)) return 80;
+        if (stack.isOf(Items.COAL_BLOCK)) return 800;
+        if (stack.isOf(Items.BLAZE_ROD)) return 120;
+        if (stack.isOf(Items.LAVA_BUCKET)) return 1000;
+        if (stack.isOf(Items.OAK_PLANKS) || stack.isOf(Items.OAK_LOG) || stack.isOf(Items.STICK)) return 15;
+
+        if (this.world != null) {
+            try {
+                int ticks = this.world.getFuelRegistry().getFuelTicks(stack);
+                if (ticks > 0) return Math.max(1, ticks / 20);
+            } catch (Exception ignored) {}
+        }
+        return 0;
+    }
+
+    public void tryRefuel() {
         if (this.world == null) return;
+
+        // Check dedicated fuel slot (Slot 0) first
         ItemStack fuelStack = this.items.get(TurtleScreenHandler.FUEL_SLOT);
-        if (!fuelStack.isEmpty() && this.world.getFuelRegistry().isFuel(fuelStack)) {
-            int ticks = this.world.getFuelRegistry().getFuelTicks(fuelStack);
-            int gain = Math.max(1, ticks / 20);
-            if (this.fuel + gain <= this.maxFuel) {
-                this.fuel += gain;
-                ItemStack remainder = fuelStack.getRecipeRemainder();
-                fuelStack.decrement(1);
-                if (fuelStack.isEmpty() && !remainder.isEmpty()) {
-                    this.items.set(TurtleScreenHandler.FUEL_SLOT, remainder);
+        int gain = getFuelGain(fuelStack);
+        int slotUsed = TurtleScreenHandler.FUEL_SLOT;
+
+        // If empty, check storage slots (Slots 3-11)
+        if (gain <= 0) {
+            for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+                ItemStack s = this.items.get(i);
+                int g = getFuelGain(s);
+                if (g > 0) {
+                    gain = g;
+                    fuelStack = s;
+                    slotUsed = i;
+                    break;
                 }
-                if (this.status == TurtleStatus.OUT_OF_FUEL) {
-                    this.status = TurtleStatus.RUNNING;
-                }
-                markDirty();
             }
+        }
+
+        if (gain > 0 && this.fuel + gain <= this.maxFuel) {
+            this.fuel += gain;
+            ItemStack remainder = fuelStack.isOf(Items.LAVA_BUCKET) ? new ItemStack(Items.BUCKET) : fuelStack.getRecipeRemainder();
+            fuelStack.decrement(1);
+            if (fuelStack.isEmpty() && !remainder.isEmpty()) {
+                this.items.set(slotUsed, remainder);
+            }
+            if (this.status == TurtleStatus.OUT_OF_FUEL) {
+                this.status = TurtleStatus.RUNNING;
+            }
+            markDirty();
         }
     }
 
@@ -255,7 +329,12 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         if (!tool.isEmpty() && this.world instanceof ServerWorld sw) {
             tool.damage(1, sw, null, item -> {});
             if (tool.isEmpty()) {
-                this.items.set(TurtleScreenHandler.TOOL_SLOT, ItemStack.EMPTY);
+                for (int i = 0; i < TOTAL_SLOTS; i++) {
+                    if (this.items.get(i) == tool) {
+                        this.items.set(i, ItemStack.EMPTY);
+                        break;
+                    }
+                }
             }
             markDirty();
         }
@@ -291,13 +370,20 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
     public boolean dig(ServerWorld world, BlockPos targetPos) {
         BlockState targetState = world.getBlockState(targetPos);
-        if (targetState.isAir()) return true;
+        if (targetState.isAir() || targetState.isLiquid()) return true;
         if (targetState.getHardness(world, targetPos) < 0) {
             return false; // Bedrock or unbreakable
         }
 
-        BlockEntity targetBe = world.getBlockEntity(targetPos);
+        // If block requires tool and tool is missing, notify status
         ItemStack tool = getToolStack();
+        if (targetState.isToolRequired() && tool.isEmpty()) {
+            this.status = TurtleStatus.NO_TOOL;
+            markDirty();
+            return false;
+        }
+
+        BlockEntity targetBe = world.getBlockEntity(targetPos);
         List<ItemStack> drops = Block.getDroppedStacks(targetState, world, targetPos, targetBe, null, tool);
 
         world.breakBlock(targetPos, false);
@@ -312,19 +398,19 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         return true;
     }
 
-    public boolean move(ServerWorld world, Direction dir) {
-        if (!consumeFuel(1)) return false;
+    public TurtleBlockEntity move(ServerWorld world, Direction dir) {
+        if (!consumeFuel(1)) return null;
 
         BlockPos targetPos = this.pos.offset(dir);
         if (!world.isInBuildLimit(targetPos)) {
             this.status = TurtleStatus.BLOCKED;
-            return false;
+            return null;
         }
 
         BlockState targetState = world.getBlockState(targetPos);
         if (!targetState.isAir() && !targetState.isLiquid() && !targetState.isReplaceable()) {
             this.status = TurtleStatus.BLOCKED;
-            return false;
+            return null;
         }
 
         // Relocate turtle block and data
@@ -340,8 +426,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             targetTurtle.copyFrom(this);
             targetTurtle.isMoving = false;
             targetTurtle.markDirty();
+            return targetTurtle;
         }
-        return true;
+        return null;
     }
 
     public void copyFrom(TurtleBlockEntity source) {
@@ -385,8 +472,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 BlockState state = world.getBlockState(target);
                 if (!state.isAir() && !state.isLiquid()) {
                     if (!dig(world, target)) {
-                        // Blocked by bedrock or unbreakable block
-                        this.status = TurtleStatus.BLOCKED;
+                        // Blocked by bedrock or missing tool
+                        if (this.status != TurtleStatus.NO_TOOL) {
+                            this.status = TurtleStatus.BLOCKED;
+                        }
                         markDirty();
                         return;
                     }
@@ -395,49 +484,69 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         }
 
         // Clear any falling sand/gravel that dropped into the center movement path
-        if (!world.getBlockState(sliceCenter).isAir()) {
-            dig(world, sliceCenter);
+        for (int i = 0; i < 5; i++) {
+            BlockState centerState = world.getBlockState(sliceCenter);
+            if (centerState.isAir() || centerState.isLiquid()) break;
+            if (!dig(world, sliceCenter)) break;
         }
-        if (!world.getBlockState(sliceCenter.up()).isAir()) {
-            dig(world, sliceCenter.up());
+        for (int i = 0; i < 5; i++) {
+            BlockState aboveCenterState = world.getBlockState(sliceCenter.up());
+            if (aboveCenterState.isAir() || aboveCenterState.isLiquid()) break;
+            if (!dig(world, sliceCenter.up())) break;
         }
 
-        if (move(world, facing)) {
-            this.stepsMoved++;
-            this.progress = (this.stepsMoved * 100) / this.configDistance;
+        TurtleBlockEntity movedTurtle = move(world, facing);
+        if (movedTurtle != null) {
+            movedTurtle.stepsMoved++;
+            movedTurtle.progress = (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance;
 
             // Place a torch every 7 blocks on the floor behind the turtle
-            if (this.stepsMoved % 7 == 0) {
-                placeTorch(world);
+            if (movedTurtle.stepsMoved % 7 == 0) {
+                movedTurtle.placeTorch(world);
             }
 
-            if (this.stepsMoved >= this.configDistance) {
-                this.status = TurtleStatus.COMPLETED;
+            if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
+                movedTurtle.status = TurtleStatus.COMPLETED;
             }
+            movedTurtle.markDirty();
         }
     }
 
     private boolean placeTorch(ServerWorld world) {
+        BlockPos backPos = this.pos.offset(getFacing().getOpposite());
+        BlockState floorState = world.getBlockState(backPos.down());
+
+        if (!world.getBlockState(backPos).isAir() || !floorState.isSolid()) {
+            return false;
+        }
+
+        // 1. Try to use torches from storage (Slots 3-11)
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
             ItemStack stack = this.items.get(i);
             if (!stack.isEmpty() && (stack.isOf(Items.TORCH) || stack.isOf(Items.SOUL_TORCH))) {
-                BlockPos backPos = this.pos.offset(getFacing().getOpposite());
-                BlockState floorState = world.getBlockState(backPos.down());
-                if (world.getBlockState(backPos).isAir() && floorState.isSolid()) {
-                    BlockState torchState = stack.isOf(Items.SOUL_TORCH)
-                            ? Blocks.SOUL_TORCH.getDefaultState()
-                            : Blocks.TORCH.getDefaultState();
-                    world.setBlockState(backPos, torchState, Block.NOTIFY_ALL);
-                    stack.decrement(1);
-                    if (stack.isEmpty()) {
-                        this.items.set(i, ItemStack.EMPTY);
-                    }
-                    world.playSound(null, backPos, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f);
-                    markDirty();
-                    return true;
+                BlockState torchState = stack.isOf(Items.SOUL_TORCH)
+                        ? Blocks.SOUL_TORCH.getDefaultState()
+                        : Blocks.TORCH.getDefaultState();
+                world.setBlockState(backPos, torchState, Block.NOTIFY_ALL);
+                stack.decrement(1);
+                if (stack.isEmpty()) {
+                    this.items.set(i, ItemStack.EMPTY);
                 }
+                world.playSound(null, backPos, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                markDirty();
+                return true;
             }
         }
+
+        // 2. Fallback: synthesize torch from fuel reserve
+        if (this.fuel >= 1) {
+            world.setBlockState(backPos, Blocks.TORCH.getDefaultState(), Block.NOTIFY_ALL);
+            consumeFuel(1);
+            world.playSound(null, backPos, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+            markDirty();
+            return true;
+        }
+
         return false;
     }
 
@@ -467,7 +576,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             this.progress = (this.quarryLayer * 100) / this.configDistance;
 
             if (this.quarryLayer < this.configDistance) {
-                move(world, Direction.DOWN);
+                TurtleBlockEntity movedTurtle = move(world, Direction.DOWN);
+                if (movedTurtle != null) {
+                    movedTurtle.markDirty();
+                }
             } else {
                 this.status = TurtleStatus.COMPLETED;
             }
@@ -499,12 +611,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             dig(world, frontPos);
         }
 
-        if (move(world, facing)) {
-            this.stepsMoved++;
-            this.progress = (this.stepsMoved * 100) / this.configDistance;
-            if (this.stepsMoved >= this.configDistance) {
-                this.status = TurtleStatus.COMPLETED;
+        TurtleBlockEntity movedTurtle = move(world, facing);
+        if (movedTurtle != null) {
+            movedTurtle.stepsMoved++;
+            movedTurtle.progress = (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance;
+            if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
+                movedTurtle.status = TurtleStatus.COMPLETED;
             }
+            movedTurtle.markDirty();
         }
     }
 
@@ -553,9 +667,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             return;
         }
 
-        if (move(world, facing)) {
-            this.stepsMoved++;
-            this.progress = (this.stepsMoved * 100) / this.configDistance;
+        TurtleBlockEntity movedTurtle = move(world, facing);
+        if (movedTurtle != null) {
+            movedTurtle.stepsMoved++;
+            movedTurtle.progress = (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance;
+            if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
+                movedTurtle.status = TurtleStatus.COMPLETED;
+            }
+            movedTurtle.markDirty();
         }
     }
 
@@ -577,12 +696,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             }
         }
 
-        if (move(world, facing)) {
-            this.stepsMoved++;
-            this.progress = (this.stepsMoved * 100) / this.configDistance;
-            if (this.stepsMoved >= this.configDistance) {
-                this.status = TurtleStatus.COMPLETED;
+        TurtleBlockEntity movedTurtle = move(world, facing);
+        if (movedTurtle != null) {
+            movedTurtle.stepsMoved++;
+            movedTurtle.progress = (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance;
+            if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
+                movedTurtle.status = TurtleStatus.COMPLETED;
             }
+            movedTurtle.markDirty();
         }
     }
 
