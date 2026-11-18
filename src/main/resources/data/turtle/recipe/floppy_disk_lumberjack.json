@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    "turtle:floppy_disk_blank",
+    "minecraft:iron_axe"
+  ],
+  "result": {
+    "count": 1,
+    "id": "turtle:floppy_disk_lumberjack"
+  }
+}

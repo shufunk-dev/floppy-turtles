@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "turtle:block/turtle_front",
+    "north": "turtle:block/turtle_front",
+    "south": "turtle:block/turtle_side",
+    "east": "turtle:block/turtle_side",
+    "west": "turtle:block/turtle_side",
+    "up": "turtle:block/turtle_top",
+    "down": "turtle:block/turtle_bottom"
+  }
+}

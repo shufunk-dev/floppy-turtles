@@ -1,0 +1,13 @@
+{
+  "block.turtle.turtle": "Autonomous Turtle",
+  "item.turtle.turtle": "Autonomous Turtle",
+  "item.turtle.floppy_disk_blank": "Blank Floppy Disk",
+  "item.turtle.floppy_disk_miner": "Floppy Disk (Tunnel Miner)",
+  "item.turtle.floppy_disk_quarry": "Floppy Disk (Quarry 3x3)",
+  "item.turtle.floppy_disk_builder": "Floppy Disk (Bridge Builder)",
+  "item.turtle.floppy_disk_lumberjack": "Floppy Disk (Tree Feller)",
+  "item.turtle.floppy_disk_farmer": "Floppy Disk (Crop Harvester)",
+  "item.turtle.floppy_disk_sentry": "Floppy Disk (Mob Sentry)",
+  "itemGroup.turtle": "Turtle Mod",
+  "container.turtle": "Autonomous Turtle"
+}

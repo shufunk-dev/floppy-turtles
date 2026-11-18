@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "turtle",
+  "version": "${version}",
+  "name": "Turtle Mod",
+  "description": "Autonomous programmable turtles running pre-loaded floppy disk apps with tool support and fuel requirements.",
+  "authors": [
+    "Shufunk"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/turtle/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.turtlemod.TurtleMod"
+    ],
+    "client": [
+      "com.turtlemod.TurtleModClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~1.21.11",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
