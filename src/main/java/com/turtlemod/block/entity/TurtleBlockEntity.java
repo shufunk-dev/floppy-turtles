@@ -140,13 +140,49 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         return ItemStack.EMPTY;
     }
 
+    public boolean hasRequiredTool(AppType app) {
+        ItemStack tool = getToolStack();
+        return switch (app) {
+            case MINER, QUARRY -> isPickaxe(tool);
+            case LUMBERJACK -> isAxe(tool);
+            case FARMER -> isHoe(tool);
+            case SENTRY -> isSword(tool);
+            default -> true;
+        };
+    }
+
+    public static boolean isPickaxe(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        return stack.isOf(Items.WOODEN_PICKAXE) || stack.isOf(Items.STONE_PICKAXE) ||
+               stack.isOf(Items.IRON_PICKAXE) || stack.isOf(Items.GOLDEN_PICKAXE) ||
+               stack.isOf(Items.DIAMOND_PICKAXE) || stack.isOf(Items.NETHERITE_PICKAXE);
+    }
+
+    public static boolean isAxe(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        return stack.isOf(Items.WOODEN_AXE) || stack.isOf(Items.STONE_AXE) ||
+               stack.isOf(Items.IRON_AXE) || stack.isOf(Items.GOLDEN_AXE) ||
+               stack.isOf(Items.DIAMOND_AXE) || stack.isOf(Items.NETHERITE_AXE);
+    }
+
+    public static boolean isHoe(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        return stack.isOf(Items.WOODEN_HOE) || stack.isOf(Items.STONE_HOE) ||
+               stack.isOf(Items.IRON_HOE) || stack.isOf(Items.GOLDEN_HOE) ||
+               stack.isOf(Items.DIAMOND_HOE) || stack.isOf(Items.NETHERITE_HOE);
+    }
+
+    public static boolean isSword(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        return stack.isOf(Items.WOODEN_SWORD) || stack.isOf(Items.STONE_SWORD) ||
+               stack.isOf(Items.IRON_SWORD) || stack.isOf(Items.GOLDEN_SWORD) ||
+               stack.isOf(Items.DIAMOND_SWORD) || stack.isOf(Items.NETHERITE_SWORD);
+    }
+
     private static boolean isToolItem(ItemStack s) {
-        return s.isOf(Items.DIAMOND_PICKAXE) || s.isOf(Items.IRON_PICKAXE) || s.isOf(Items.NETHERITE_PICKAXE)
-                || s.isOf(Items.STONE_PICKAXE) || s.isOf(Items.GOLDEN_PICKAXE) || s.isOf(Items.WOODEN_PICKAXE)
-                || s.isOf(Items.DIAMOND_AXE) || s.isOf(Items.IRON_AXE) || s.isOf(Items.NETHERITE_AXE)
-                || s.isOf(Items.DIAMOND_SHOVEL) || s.isOf(Items.IRON_SHOVEL)
-                || s.isOf(Items.DIAMOND_HOE) || s.isOf(Items.IRON_HOE)
-                || s.isOf(Items.DIAMOND_SWORD) || s.isOf(Items.IRON_SWORD) || s.isOf(Items.NETHERITE_SWORD);
+        return isPickaxe(s) || isAxe(s) || isHoe(s) || isSword(s) ||
+               s.isOf(Items.WOODEN_SHOVEL) || s.isOf(Items.STONE_SHOVEL) ||
+               s.isOf(Items.IRON_SHOVEL) || s.isOf(Items.DIAMOND_SHOVEL) || s.isOf(Items.NETHERITE_SHOVEL);
     }
 
     public PropertyDelegate getPropertyDelegate() {
@@ -156,30 +192,66 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     public void onButtonPressed(int buttonId) {
         switch (buttonId) {
             case 0 -> { // START
-                if (getAppType() != AppType.NONE) {
-                    if (this.fuel <= 0) {
-                        tryRefuel();
-                    }
-                    if (this.fuel > 0) {
-                        this.status = TurtleStatus.RUNNING;
-                        this.actionCooldown = 2;
-                    } else {
-                        this.status = TurtleStatus.OUT_OF_FUEL;
-                    }
-                } else {
+                AppType app = getAppType();
+                if (app == AppType.NONE) {
                     this.status = TurtleStatus.IDLE;
+                    if (this.world != null) {
+                        this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BASS.value(), SoundCategory.BLOCKS, 1.0f, 0.5f);
+                    }
+                    markDirty();
+                    return;
+                }
+
+                // Check and refuel
+                if (this.fuel <= 0) {
+                    tryRefuel();
+                }
+                if (this.fuel <= 0) {
+                    this.status = TurtleStatus.OUT_OF_FUEL;
+                    if (this.world != null) {
+                        this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BASS.value(), SoundCategory.BLOCKS, 1.0f, 0.5f);
+                    }
+                    markDirty();
+                    return;
+                }
+
+                // Check required tool
+                if (!hasRequiredTool(app)) {
+                    this.status = TurtleStatus.NO_TOOL;
+                    if (this.world != null) {
+                        this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BASS.value(), SoundCategory.BLOCKS, 1.0f, 0.5f);
+                    }
+                    markDirty();
+                    return;
+                }
+
+                // Reset progress if starting fresh after completion
+                if (this.status == TurtleStatus.COMPLETED) {
+                    this.stepsMoved = 0;
+                    this.progress = 0;
+                    this.quarryLayer = 0;
+                    this.quarryIndex = 0;
+                }
+
+                this.status = TurtleStatus.RUNNING;
+                this.actionCooldown = 5;
+                if (this.world != null) {
+                    this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), SoundCategory.BLOCKS, 1.0f, 1.0f);
                 }
                 markDirty();
             }
-            case 1 -> { // STOP
+            case 1 -> { // STOP / PAUSE
                 this.status = TurtleStatus.PAUSED;
+                if (this.world != null) {
+                    this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BASS.value(), SoundCategory.BLOCKS, 1.0f, 1.0f);
+                }
                 markDirty();
             }
-            case 2 -> { // PARAM -
-                this.configDistance = Math.max(2, this.configDistance - 4);
+            case 2 -> { // PARAM - (distance - 4)
+                this.configDistance = Math.max(4, this.configDistance - 4);
                 markDirty();
             }
-            case 3 -> { // PARAM +
+            case 3 -> { // PARAM + (distance + 4)
                 this.configDistance = Math.min(128, this.configDistance + 4);
                 markDirty();
             }
@@ -197,26 +269,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     public static void tick(World world, BlockPos pos, BlockState state, TurtleBlockEntity entity) {
         if (world.isClient() || entity.isMoving) return;
 
-        // Auto refuel when low
-        if (entity.fuel < 20) {
-            entity.tryRefuel();
-        }
-
         AppType currentApp = entity.getAppType();
-
-        // Auto-start if idle or out-of-fuel and both program and fuel are available
-        if (entity.status == TurtleStatus.IDLE || entity.status == TurtleStatus.OUT_OF_FUEL) {
-            if (currentApp != AppType.NONE) {
-                if (entity.fuel <= 0) {
-                    entity.tryRefuel();
-                }
-                if (entity.fuel > 0) {
-                    entity.status = TurtleStatus.RUNNING;
-                    entity.actionCooldown = 5;
-                    entity.markDirty();
-                }
-            }
-        }
 
         // If program disk was removed while running, halt to idle
         if (currentApp == AppType.NONE && entity.status == TurtleStatus.RUNNING) {
@@ -225,7 +278,27 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             return;
         }
 
+        // Only tick actions if player started the program
         if (entity.status != TurtleStatus.RUNNING) {
+            return;
+        }
+
+        // Auto refuel when low while running
+        if (entity.fuel < 5) {
+            entity.tryRefuel();
+        }
+
+        // Check fuel depletion
+        if (entity.fuel <= 0) {
+            entity.status = TurtleStatus.OUT_OF_FUEL;
+            entity.markDirty();
+            return;
+        }
+
+        // Check required tool while running
+        if (!entity.hasRequiredTool(currentApp)) {
+            entity.status = TurtleStatus.NO_TOOL;
+            entity.markDirty();
             return;
         }
 
