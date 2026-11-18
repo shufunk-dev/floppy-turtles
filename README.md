@@ -30,7 +30,7 @@ Pre-programmed Floppy Disks allow players to plug-and-play diverse automated beh
 | Floppy Disk | App Name | Function | Recommended Tool |
 | :--- | :--- | :--- | :--- |
 | **Blank Disk** | *Unprogrammed* | Base crafting material for software disks | None |
-| **Tunnel Miner** | `MINER` | Mines a straight tunnel ahead, digging foot and head blocks, collecting all ores into its inventory | Pickaxe / Shovel |
+| **3x3 Tunnel Miner**| `MINER` | Excavates a 3x3 tunnel ahead and places torches every 7 blocks | Pickaxe / Shovel |
 | **Quarry 3x3** | `QUARRY` | Excavates a 3x3 shaft straight down layer-by-layer down to bedrock | Pickaxe |
 | **Bridge Builder**| `BUILDER` | Paves solid bridges across ravines, chasms, oceans, and lava lakes using blocks from its storage | Building Blocks |
 | **Tree Feller** | `LUMBERJACK` | Detects tree trunks, fells trees vertically from base to canopy, collecting wood and saplings | Axe |

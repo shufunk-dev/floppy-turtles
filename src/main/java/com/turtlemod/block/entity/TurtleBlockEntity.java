@@ -20,6 +20,7 @@ import net.minecraft.inventory.Inventories;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.screen.NamedScreenHandlerFactory;
 import net.minecraft.screen.PropertyDelegate;
@@ -368,31 +369,76 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             return;
         }
 
-        BlockPos frontPos = this.pos.offset(facing);
-        BlockPos frontUpPos = frontPos.up();
+        Direction left = facing.rotateYCounterclockwise();
+        Direction right = facing.rotateYClockwise();
+        BlockPos sliceCenter = this.pos.offset(facing);
 
-        if (!world.getBlockState(frontUpPos).isAir()) {
-            if (!dig(world, frontUpPos)) {
-                this.status = TurtleStatus.BLOCKED;
-                markDirty();
-                return;
+        // Mine 3x3 slice in front of the turtle:
+        // dy: 0 (foot), 1 (eye), 2 (ceiling)
+        // dxz: left (-1), center (0), right (+1)
+        for (int dy = 0; dy <= 2; dy++) {
+            for (int offset = -1; offset <= 1; offset++) {
+                BlockPos target = sliceCenter.up(dy);
+                if (offset == -1) target = target.offset(left);
+                else if (offset == 1) target = target.offset(right);
+
+                BlockState state = world.getBlockState(target);
+                if (!state.isAir() && !state.isLiquid()) {
+                    if (!dig(world, target)) {
+                        // Blocked by bedrock or unbreakable block
+                        this.status = TurtleStatus.BLOCKED;
+                        markDirty();
+                        return;
+                    }
+                }
             }
         }
-        if (!world.getBlockState(frontPos).isAir()) {
-            if (!dig(world, frontPos)) {
-                this.status = TurtleStatus.BLOCKED;
-                markDirty();
-                return;
-            }
+
+        // Clear any falling sand/gravel that dropped into the center movement path
+        if (!world.getBlockState(sliceCenter).isAir()) {
+            dig(world, sliceCenter);
+        }
+        if (!world.getBlockState(sliceCenter.up()).isAir()) {
+            dig(world, sliceCenter.up());
         }
 
         if (move(world, facing)) {
             this.stepsMoved++;
             this.progress = (this.stepsMoved * 100) / this.configDistance;
+
+            // Place a torch every 7 blocks on the floor behind the turtle
+            if (this.stepsMoved % 7 == 0) {
+                placeTorch(world);
+            }
+
             if (this.stepsMoved >= this.configDistance) {
                 this.status = TurtleStatus.COMPLETED;
             }
         }
+    }
+
+    private boolean placeTorch(ServerWorld world) {
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack stack = this.items.get(i);
+            if (!stack.isEmpty() && (stack.isOf(Items.TORCH) || stack.isOf(Items.SOUL_TORCH))) {
+                BlockPos backPos = this.pos.offset(getFacing().getOpposite());
+                BlockState floorState = world.getBlockState(backPos.down());
+                if (world.getBlockState(backPos).isAir() && floorState.isSolid()) {
+                    BlockState torchState = stack.isOf(Items.SOUL_TORCH)
+                            ? Blocks.SOUL_TORCH.getDefaultState()
+                            : Blocks.TORCH.getDefaultState();
+                    world.setBlockState(backPos, torchState, Block.NOTIFY_ALL);
+                    stack.decrement(1);
+                    if (stack.isEmpty()) {
+                        this.items.set(i, ItemStack.EMPTY);
+                    }
+                    world.playSound(null, backPos, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                    markDirty();
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void executeQuarry(ServerWorld world) {
