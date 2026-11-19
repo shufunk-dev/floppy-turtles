@@ -731,35 +731,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
     private void executeLumberjack(ServerWorld world) {
         Direction facing = getFacing();
-        BlockPos frontPos = this.pos.offset(facing);
-        BlockState frontState = world.getBlockState(frontPos);
-
-        // Check front pos or front pos up for tree trunk
-        BlockPos trunkPos = null;
-        if (frontState.isIn(BlockTags.LOGS)) {
-            trunkPos = frontPos;
-        } else if (world.getBlockState(frontPos.up()).isIn(BlockTags.LOGS)) {
-            trunkPos = frontPos.up();
-        }
-
-        if (trunkPos != null) {
-            fellTree(world, trunkPos);
-            this.stepsMoved++;
-            this.progress = Math.min(100, (this.stepsMoved * 100) / this.configDistance);
-            if (this.stepsMoved >= this.configDistance) {
-                this.status = TurtleStatus.COMPLETED;
-            }
-            markDirty();
-            return;
-        }
-
-        // Clear any leaves in front or eye level so turtle isn't blocked while walking
-        if (frontState.isIn(BlockTags.LEAVES)) {
-            dig(world, frontPos);
-        }
-        if (world.getBlockState(frontPos.up()).isIn(BlockTags.LEAVES)) {
-            dig(world, frontPos.up());
-        }
+        Direction left = facing.rotateYCounterclockwise();
 
         if (this.stepsMoved >= this.configDistance) {
             this.status = TurtleStatus.COMPLETED;
@@ -767,7 +739,43 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             return;
         }
 
-        // Try moving forward; if blocked by a 1-block natural terrain rise, step up onto it
+        // 1. Search in a radius around and in front of the turtle for any tree trunks to fell
+        // Forward: 0..3 blocks, Sideways: -2..2 blocks (5 blocks wide), Vertical: -1..3 blocks
+        BlockPos closestTrunk = null;
+        double minDistance = Double.MAX_VALUE;
+
+        for (int fwd = 0; fwd <= 3; fwd++) {
+            for (int side = -2; side <= 2; side++) {
+                for (int dy = -1; dy <= 3; dy++) {
+                    BlockPos target = this.pos.offset(facing, fwd).offset(left, side).up(dy);
+                    BlockState state = world.getBlockState(target);
+                    if (state.isIn(BlockTags.LOGS)) {
+                        double d = this.pos.getSquaredDistance(target);
+                        if (d < minDistance) {
+                            minDistance = d;
+                            closestTrunk = target;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (closestTrunk != null) {
+            fellTree(world, closestTrunk);
+            markDirty();
+            return; // Tree felled; next tick will check for any other nearby trees before moving
+        }
+
+        // 2. Clear leaves in the 1x2 movement path ahead
+        BlockPos frontPos = this.pos.offset(facing);
+        if (world.getBlockState(frontPos).isIn(BlockTags.LEAVES)) {
+            dig(world, frontPos);
+        }
+        if (world.getBlockState(frontPos.up()).isIn(BlockTags.LEAVES)) {
+            dig(world, frontPos.up());
+        }
+
+        // 3. Move forward along the path (with natural terrain hill climbing/descent)
         TurtleBlockEntity movedTurtle = move(world, facing);
         if (movedTurtle == null) {
             BlockPos upTarget = frontPos.up();
@@ -780,7 +788,6 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             }
         }
 
-        // If moved forward and there is a 1-block drop, step down to hug the terrain
         if (movedTurtle != null) {
             BlockPos below = movedTurtle.pos.down();
             if (world.getBlockState(below).isAir()) {
