@@ -39,7 +39,12 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Queue;
+import java.util.Set;
 
 public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedScreenHandlerFactory {
     public static final int TOTAL_SLOTS = 12;
@@ -729,18 +734,31 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         BlockPos frontPos = this.pos.offset(facing);
         BlockState frontState = world.getBlockState(frontPos);
 
+        // Check front pos or front pos up for tree trunk
+        BlockPos trunkPos = null;
         if (frontState.isIn(BlockTags.LOGS)) {
-            BlockPos currentPos = frontPos;
-            int count = 0;
-            while (count < 24 && world.getBlockState(currentPos).isIn(BlockTags.LOGS)) {
-                dig(world, currentPos);
-                currentPos = currentPos.up();
-                count++;
-            }
+            trunkPos = frontPos;
+        } else if (world.getBlockState(frontPos.up()).isIn(BlockTags.LOGS)) {
+            trunkPos = frontPos.up();
+        }
+
+        if (trunkPos != null) {
+            fellTree(world, trunkPos);
             this.stepsMoved++;
             this.progress = Math.min(100, (this.stepsMoved * 100) / this.configDistance);
+            if (this.stepsMoved >= this.configDistance) {
+                this.status = TurtleStatus.COMPLETED;
+            }
             markDirty();
             return;
+        }
+
+        // Clear any leaves in front or eye level so turtle isn't blocked while walking
+        if (frontState.isIn(BlockTags.LEAVES)) {
+            dig(world, frontPos);
+        }
+        if (world.getBlockState(frontPos.up()).isIn(BlockTags.LEAVES)) {
+            dig(world, frontPos.up());
         }
 
         if (this.stepsMoved >= this.configDistance) {
@@ -758,6 +776,96 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             }
             movedTurtle.markDirty();
         }
+    }
+
+    private void fellTree(ServerWorld world, BlockPos startPos) {
+        Set<BlockPos> visitedLogs = new HashSet<>();
+        Queue<BlockPos> queue = new ArrayDeque<>();
+        Set<BlockPos> leavesToBreak = new HashSet<>();
+
+        queue.add(startPos);
+        visitedLogs.add(startPos);
+
+        int maxLogs = 128;
+        int startY = startPos.getY();
+
+        // 1. BFS to find all connected logs in the tree and adjacent leaves
+        while (!queue.isEmpty() && visitedLogs.size() < maxLogs) {
+            BlockPos current = queue.poll();
+
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) continue;
+                        BlockPos neighbor = current.add(dx, dy, dz);
+
+                        // Don't search deep into the ground
+                        if (neighbor.getY() < startY - 1) continue;
+                        // Don't search too far horizontally from the trunk (within 10 blocks)
+                        if (Math.abs(neighbor.getX() - startPos.getX()) > 10 || Math.abs(neighbor.getZ() - startPos.getZ()) > 10) continue;
+
+                        BlockState nState = world.getBlockState(neighbor);
+                        if (nState.isIn(BlockTags.LOGS)) {
+                            if (visitedLogs.add(neighbor)) {
+                                queue.add(neighbor);
+                            }
+                        } else if (nState.isIn(BlockTags.LEAVES)) {
+                            leavesToBreak.add(neighbor);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Expand leaves by up to 2 blocks around detected leaves to capture full canopy
+        for (int step = 0; step < 2; step++) {
+            Set<BlockPos> extraLeaves = new HashSet<>();
+            for (BlockPos leaf : leavesToBreak) {
+                for (Direction dir : Direction.values()) {
+                    BlockPos nLeaf = leaf.offset(dir);
+                    if (!leavesToBreak.contains(nLeaf) && world.getBlockState(nLeaf).isIn(BlockTags.LEAVES)) {
+                        extraLeaves.add(nLeaf);
+                    }
+                }
+            }
+            leavesToBreak.addAll(extraLeaves);
+        }
+
+        // 3. Break all logs from top to bottom
+        List<BlockPos> sortedLogs = new ArrayList<>(visitedLogs);
+        sortedLogs.sort((a, b) -> Integer.compare(b.getY(), a.getY()));
+        for (BlockPos logPos : sortedLogs) {
+            dig(world, logPos);
+        }
+
+        // 4. Break all canopy leaves
+        for (BlockPos leafPos : leavesToBreak) {
+            BlockState leafState = world.getBlockState(leafPos);
+            if (leafState.isIn(BlockTags.LEAVES)) {
+                List<ItemStack> drops = Block.getDroppedStacks(leafState, world, leafPos, null, null, ItemStack.EMPTY);
+                world.breakBlock(leafPos, false);
+                for (ItemStack drop : drops) {
+                    ItemStack leftover = insertItem(drop);
+                    if (!leftover.isEmpty()) {
+                        ItemScatterer.spawn(world, this.pos.getX(), this.pos.getY(), this.pos.getZ(), leftover);
+                    }
+                }
+            }
+        }
+
+        // 5. Vacuum all nearby drops into the turtle
+        Box vacuumBox = new Box(startPos).expand(12, 16, 12);
+        List<ItemEntity> drops = world.getEntitiesByClass(ItemEntity.class, vacuumBox, e -> e.isAlive());
+        for (ItemEntity drop : drops) {
+            ItemStack leftover = insertItem(drop.getStack());
+            if (leftover.isEmpty()) {
+                drop.discard();
+            } else {
+                drop.setStack(leftover);
+            }
+        }
+
+        world.playSound(null, startPos, SoundEvents.BLOCK_WOOD_BREAK, SoundCategory.BLOCKS, 1.0f, 0.8f);
     }
 
     private void executeFarmer(ServerWorld world) {
