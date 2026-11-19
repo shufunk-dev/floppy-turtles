@@ -1067,9 +1067,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 BlockPos groundPos = this.pos.offset(facing, dz).offset(left, dx).down();
                 BlockPos cropPos = groundPos.up();
 
-                // Clear surface obstruction (grass, flowers, snow, etc.)
+                // Clear surface obstruction (grass, flowers, snow, dirt bumps, etc.)
                 BlockState cropState = world.getBlockState(cropPos);
-                if (!cropState.isAir() && (cropState.getCollisionShape(world, cropPos).isEmpty() || cropState.isReplaceable())) {
+                if (!cropState.isAir() && (cropState.getCollisionShape(world, cropPos).isEmpty() || cropState.isReplaceable() || cropState.isOf(Blocks.DIRT) || cropState.isOf(Blocks.GRASS_BLOCK))) {
                     dig(world, cropPos);
                 }
 
@@ -1109,15 +1109,46 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 }
 
                 Direction facing = getFacing();
+
+                // On start of advance, lift UP 1 block to hover safely above the newly planted crops
+                if (this.farmMoveStep == 0 && !world.getBlockState(this.pos.down()).isAir()) {
+                    TurtleBlockEntity up = move(world, Direction.UP);
+                    if (up != null) {
+                        up.markDirty();
+                    }
+                    return;
+                }
+
+                // Try to move forward 1 block (hovering)
                 TurtleBlockEntity movedTurtle = move(world, facing);
+
+                // If forward is blocked by elevated terrain, step UP 1 block to climb the hill!
+                if (movedTurtle == null) {
+                    TurtleBlockEntity up = move(world, Direction.UP);
+                    if (up != null) {
+                        movedTurtle = up.move(world, facing);
+                    }
+                }
+
                 if (movedTurtle != null) {
                     movedTurtle.farmMoveStep++;
                     if (movedTurtle.farmMoveStep >= 9) {
-                        movedTurtle.farmMoveStep = 0;
-                        movedTurtle.farmIndex++;
-                        movedTurtle.farmRow = -1; // Place water for next farm!
+                        // Arrived at the new farm center 9 blocks forward!
+                        // Descend until resting directly on top of solid ground
+                        TurtleBlockEntity landedTurtle = movedTurtle;
+                        for (int d = 0; d < 5 && world.getBlockState(landedTurtle.pos.down()).isAir(); d++) {
+                            TurtleBlockEntity down = landedTurtle.move(world, Direction.DOWN);
+                            if (down == null) break;
+                            landedTurtle = down;
+                        }
+
+                        landedTurtle.farmMoveStep = 0;
+                        landedTurtle.farmIndex++;
+                        landedTurtle.farmRow = -1; // Place water for next farm!
+                        landedTurtle.markDirty();
+                    } else {
+                        movedTurtle.markDirty();
                     }
-                    movedTurtle.markDirty();
                 } else {
                     this.status = TurtleStatus.BLOCKED;
                     markDirty();
@@ -1193,7 +1224,23 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
         // Move forward 1 block (hovering)
         TurtleBlockEntity movedTurtle = move(world, facing);
+        if (movedTurtle == null) {
+            // Check if terrain stepped up 1 block
+            TurtleBlockEntity up = move(world, Direction.UP);
+            if (up != null) {
+                movedTurtle = up.move(world, facing);
+            }
+        }
+
         if (movedTurtle != null) {
+            // If ground dipped down, adjust hover height down to stay 1 block above crops
+            if (world.getBlockState(movedTurtle.pos.down().down()).isAir() && world.getBlockState(movedTurtle.pos.down()).isAir()) {
+                TurtleBlockEntity down = movedTurtle.move(world, Direction.DOWN);
+                if (down != null) {
+                    movedTurtle = down;
+                }
+            }
+
             movedTurtle.stepsMoved++;
             movedTurtle.progress = Math.min(100, (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance);
             if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
