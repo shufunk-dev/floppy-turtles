@@ -93,7 +93,7 @@ public class TurtleMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("Initializing Turtle Mod for Minecraft 1.21.11");
+        LOGGER.info("Initializing Floppy Turtles for Minecraft 1.21.11");
 
         // Register Block & Item
         Registry.register(Registries.BLOCK, TURTLE_BLOCK_KEY, TURTLE_BLOCK);

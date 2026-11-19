@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "turtle",
   "version": "${version}",
-  "name": "Turtle Mod",
-  "description": "Autonomous programmable turtles running pre-loaded floppy disk apps with tool support and fuel requirements.",
+  "name": "Floppy Turtles",
+  "description": "Autonomous, code-free turtles powered by floppy disks for mining, quarrying, forestry, farming, bridge building, and defense.",
   "authors": [
     "Shufunk"
   ],
