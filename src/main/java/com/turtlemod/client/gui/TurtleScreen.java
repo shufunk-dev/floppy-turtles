@@ -105,6 +105,7 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
                 case BUILDER -> "Bridge Builder";
                 case LUMBERJACK -> "Tree Feller";
                 case FARMER -> "Harvester";
+                case FARM_CREATOR -> "Farm Creator";
                 case SENTRY -> "Sentry";
                 default -> app.name();
             };
@@ -113,15 +114,23 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
         int nameX = 38 + Math.max(0, (68 - nameWidth) / 2);
         context.drawText(this.textRenderer, Text.literal(appName), nameX, 25, 0xFF003388, false);
 
-        // 4. Distance number in the LCD box (between [-] and [+], y=35..49, box is at x=54..90)
-        String distStr = this.handler.getConfigDistance() + "m";
+        // 4. Distance / parameter in the LCD box (between [-] and [+], y=35..49, box is at x=54..90)
+        String distStr;
+        if (app == AppType.FARM_CREATOR) {
+            int farms = this.handler.getConfigDistance();
+            distStr = (farms <= 1 ? "1 Farm" : farms + " Farms");
+        } else {
+            distStr = this.handler.getConfigDistance() + "m";
+        }
         int distWidth = this.textRenderer.getWidth(distStr);
         int textX = 54 + (36 - distWidth) / 2;
         context.drawText(this.textRenderer, Text.literal(distStr), textX, 39, 0xFF00FF88, false);
 
         // 5. Status line: Centered below START/STOP buttons (y=70, x=38..106)
         String statusText = switch (status) {
-            case NO_TOOL -> (app == AppType.MINER ? "Need Pickaxe!" : "Need Tool!");
+            case NO_TOOL -> (app == AppType.MINER || app == AppType.QUARRY ? "Need Pickaxe!" :
+                            (app == AppType.LUMBERJACK ? "Need Axe!" :
+                            (app == AppType.FARMER || app == AppType.FARM_CREATOR ? "Need Hoe!" : "Need Tool!")));
             case OUT_OF_FUEL -> "Out of Fuel!";
             case RUNNING -> "Running (" + this.handler.getProgress() + "%)";
             case COMPLETED -> "Done!";

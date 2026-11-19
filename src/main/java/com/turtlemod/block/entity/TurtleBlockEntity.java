@@ -18,6 +18,7 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventories;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.BlockItem;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.tag.BlockTags;
@@ -61,6 +62,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     private int actionCooldown = 0;
     private int quarryLayer = 0;
     private int quarryIndex = 0;
+    private int farmIndex = 0;
+    private int farmRow = -1;
+    private int farmMoveStep = 0;
     private boolean isMoving = false;
 
     private final PropertyDelegate propertyDelegate = new PropertyDelegate() {
@@ -151,7 +155,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         return switch (app) {
             case MINER, QUARRY -> isPickaxe(tool);
             case LUMBERJACK -> isAxe(tool);
-            case FARMER -> isHoe(tool);
+            case FARMER, FARM_CREATOR -> isHoe(tool);
             case SENTRY -> isSword(tool);
             default -> true;
         };
@@ -237,6 +241,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                     this.progress = 0;
                     this.quarryLayer = 0;
                     this.quarryIndex = 0;
+                    this.farmIndex = 0;
+                    this.farmRow = -1;
+                    this.farmMoveStep = 0;
                 }
 
                 this.status = TurtleStatus.RUNNING;
@@ -253,12 +260,26 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 }
                 markDirty();
             }
-            case 2 -> { // PARAM - (distance - 4)
-                this.configDistance = Math.max(4, this.configDistance - 4);
+            case 2 -> { // PARAM -
+                AppType app = getAppType();
+                if (app == AppType.FARM_CREATOR) {
+                    this.configDistance = Math.max(1, this.configDistance - 1);
+                } else if (app == AppType.FARMER) {
+                    this.configDistance = Math.max(9, this.configDistance - 9);
+                } else {
+                    this.configDistance = Math.max(4, this.configDistance - 4);
+                }
                 markDirty();
             }
-            case 3 -> { // PARAM + (distance + 4)
-                this.configDistance = Math.min(128, this.configDistance + 4);
+            case 3 -> { // PARAM +
+                AppType app = getAppType();
+                if (app == AppType.FARM_CREATOR) {
+                    this.configDistance = Math.min(3, this.configDistance + 1);
+                } else if (app == AppType.FARMER) {
+                    this.configDistance = Math.min(72, this.configDistance + 9);
+                } else {
+                    this.configDistance = Math.min(128, this.configDistance + 4);
+                }
                 markDirty();
             }
             case 4 -> { // RESET
@@ -266,6 +287,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 this.progress = 0;
                 this.quarryLayer = 0;
                 this.quarryIndex = 0;
+                this.farmIndex = 0;
+                this.farmRow = -1;
+                this.farmMoveStep = 0;
                 this.status = TurtleStatus.IDLE;
                 markDirty();
             }
@@ -325,6 +349,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             case BUILDER -> executeBuilder(serverWorld);
             case LUMBERJACK -> executeLumberjack(serverWorld);
             case FARMER -> executeFarmer(serverWorld);
+            case FARM_CREATOR -> executeFarmCreator(serverWorld);
             case SENTRY -> executeSentry(serverWorld);
             default -> {
                 this.status = TurtleStatus.IDLE;
@@ -536,6 +561,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         this.progress = source.progress;
         this.quarryLayer = source.quarryLayer;
         this.quarryIndex = source.quarryIndex;
+        this.farmIndex = source.farmIndex;
+        this.farmRow = source.farmRow;
+        this.farmMoveStep = source.farmMoveStep;
         this.actionCooldown = source.actionCooldown;
     }
 
@@ -923,32 +951,260 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         world.playSound(null, startPos, SoundEvents.BLOCK_WOOD_BREAK, SoundCategory.BLOCKS, 1.0f, 0.8f);
     }
 
-    private void executeFarmer(ServerWorld world) {
-        Direction facing = getFacing();
-        if (this.stepsMoved >= this.configDistance) {
-            this.status = TurtleStatus.COMPLETED;
+    public boolean hasWaterBucket() {
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            if (this.items.get(i).isOf(Items.WATER_BUCKET)) return true;
+        }
+        return false;
+    }
+
+    private boolean placeWaterSource(ServerWorld world, BlockPos waterPos) {
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack stack = this.items.get(i);
+            if (stack.isOf(Items.WATER_BUCKET)) {
+                this.items.set(i, new ItemStack(Items.BUCKET));
+                world.setBlockState(waterPos, Blocks.WATER.getDefaultState(), Block.NOTIFY_ALL);
+                world.playSound(null, waterPos, SoundEvents.ITEM_BUCKET_EMPTY, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                markDirty();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTillable(BlockState state) {
+        return state.isOf(Blocks.DIRT) || state.isOf(Blocks.GRASS_BLOCK) ||
+               state.isOf(Blocks.DIRT_PATH) || state.isOf(Blocks.COARSE_DIRT) ||
+               state.isOf(Blocks.ROOTED_DIRT);
+    }
+
+    private BlockState getCropStateForSeed(ItemStack stack) {
+        if (stack.isOf(Items.WHEAT_SEEDS)) return Blocks.WHEAT.getDefaultState();
+        if (stack.isOf(Items.CARROT)) return Blocks.CARROTS.getDefaultState();
+        if (stack.isOf(Items.POTATO)) return Blocks.POTATOES.getDefaultState();
+        if (stack.isOf(Items.BEETROOT_SEEDS)) return Blocks.BEETROOTS.getDefaultState();
+        if (stack.isOf(Items.MELON_SEEDS)) return Blocks.MELON_STEM.getDefaultState();
+        if (stack.isOf(Items.PUMPKIN_SEEDS)) return Blocks.PUMPKIN_STEM.getDefaultState();
+        if (stack.isOf(Items.TORCHFLOWER_SEEDS)) return Blocks.TORCHFLOWER_CROP.getDefaultState();
+        if (stack.isOf(Items.PITCHER_POD)) return Blocks.PITCHER_CROP.getDefaultState();
+        return null;
+    }
+
+    private BlockState consumeSeedAndGetCrop() {
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack stack = this.items.get(i);
+            if (!stack.isEmpty()) {
+                BlockState crop = getCropStateForSeed(stack);
+                if (crop != null) {
+                    stack.decrement(1);
+                    if (stack.isEmpty()) {
+                        this.items.set(i, ItemStack.EMPTY);
+                    }
+                    markDirty();
+                    return crop;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void consumeSeedForCrop(CropBlock cropBlock) {
+        Item seedItem = cropBlock.asItem();
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack stack = this.items.get(i);
+            if (stack.isOf(seedItem)) {
+                stack.decrement(1);
+                if (stack.isEmpty()) {
+                    this.items.set(i, ItemStack.EMPTY);
+                }
+                markDirty();
+                return;
+            }
+        }
+    }
+
+    private void executeFarmCreator(ServerWorld world) {
+        if (!hasRequiredTool(AppType.FARM_CREATOR)) {
+            this.status = TurtleStatus.NO_TOOL;
             markDirty();
             return;
         }
 
-        BlockPos frontPos = this.pos.offset(facing);
-        BlockState frontState = world.getBlockState(frontPos);
-        if (frontState.getBlock() instanceof CropBlock cropBlock) {
-            if (cropBlock.isMature(frontState)) {
-                dig(world, frontPos);
-                // Replant
-                world.setBlockState(frontPos, cropBlock.withAge(0), Block.NOTIFY_ALL);
+        int targetFarms = Math.min(3, Math.max(1, this.configDistance));
+
+        // 1. Center water block placement
+        if (this.farmRow == -1) {
+            BlockPos waterPos = this.pos.down();
+            if (world.getBlockState(waterPos).isOf(Blocks.WATER)) {
+                this.farmRow = 0;
+                markDirty();
+                return;
+            }
+
+            if (!consumeFuel(1)) return;
+            dig(world, waterPos);
+            if (placeWaterSource(world, waterPos)) {
+                this.farmRow = 0;
+                markDirty();
+            } else {
+                this.status = TurtleStatus.NO_TOOL; // "Need Water!"
+                markDirty();
+            }
+            return;
+        }
+
+        // 2. Till and plant row by row (dz = farmRow - 4, from -4 to +4)
+        if (this.farmRow >= 0 && this.farmRow <= 8) {
+            if (!consumeFuel(1)) return;
+
+            Direction facing = getFacing();
+            Direction left = facing.rotateYCounterclockwise();
+            int dz = this.farmRow - 4;
+
+            for (int dx = -4; dx <= 4; dx++) {
+                if (dx == 0 && dz == 0) continue; // Skip center water block under turtle
+
+                BlockPos groundPos = this.pos.offset(facing, dz).offset(left, dx).down();
+                BlockPos cropPos = groundPos.up();
+
+                // Clear surface obstruction (grass, flowers, snow, etc.)
+                BlockState cropState = world.getBlockState(cropPos);
+                if (!cropState.isAir() && (cropState.getCollisionShape(world, cropPos).isEmpty() || cropState.isReplaceable())) {
+                    dig(world, cropPos);
+                }
+
+                // Till ground into farmland
+                BlockState gState = world.getBlockState(groundPos);
+                if (isTillable(gState)) {
+                    world.setBlockState(groundPos, Blocks.FARMLAND.getDefaultState(), Block.NOTIFY_ALL);
+                    damageTool();
+                    world.playSound(null, groundPos, SoundEvents.ITEM_HOE_TILL, SoundCategory.BLOCKS, 0.8f, 1.0f);
+                }
+
+                // Plant seed if ground is farmland and air above is clear
+                if (world.getBlockState(groundPos).isOf(Blocks.FARMLAND) && world.getBlockState(cropPos).isAir()) {
+                    BlockState seedCrop = consumeSeedAndGetCrop();
+                    if (seedCrop != null) {
+                        world.setBlockState(cropPos, seedCrop, Block.NOTIFY_ALL);
+                        world.playSound(null, cropPos, SoundEvents.ITEM_CROP_PLANT, SoundCategory.BLOCKS, 0.8f, 1.0f);
+                    }
+                }
+            }
+
+            int totalUnits = targetFarms * 10;
+            int currentUnits = this.farmIndex * 10 + (this.farmRow + 1);
+            this.progress = Math.min(100, (currentUnits * 100) / totalUnits);
+            this.farmRow++;
+            markDirty();
+            return;
+        }
+
+        // 3. Advance to next farm center (9 blocks forward) or complete
+        if (this.farmRow == 9) {
+            if (this.farmIndex + 1 < targetFarms) {
+                if (!hasWaterBucket()) {
+                    this.status = TurtleStatus.NO_TOOL; // "Need Water!"
+                    markDirty();
+                    return;
+                }
+
+                Direction facing = getFacing();
+                TurtleBlockEntity movedTurtle = move(world, facing);
+                if (movedTurtle != null) {
+                    movedTurtle.farmMoveStep++;
+                    if (movedTurtle.farmMoveStep >= 9) {
+                        movedTurtle.farmMoveStep = 0;
+                        movedTurtle.farmIndex++;
+                        movedTurtle.farmRow = -1; // Place water for next farm!
+                    }
+                    movedTurtle.markDirty();
+                } else {
+                    this.status = TurtleStatus.BLOCKED;
+                    markDirty();
+                }
+            } else {
+                this.status = TurtleStatus.COMPLETED;
+                this.progress = 100;
+                world.playSound(null, this.pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                markDirty();
+            }
+        }
+    }
+
+    private void executeFarmer(ServerWorld world) {
+        Direction facing = getFacing();
+        Direction left = facing.rotateYCounterclockwise();
+
+        if (!hasRequiredTool(AppType.FARMER)) {
+            this.status = TurtleStatus.NO_TOOL;
+            markDirty();
+            return;
+        }
+
+        // Hover check: if resting directly on solid ground, lift up 1 block above crops
+        if (!world.getBlockState(this.pos.down()).isAir()) {
+            TurtleBlockEntity up = move(world, Direction.UP);
+            if (up != null) {
+                up.executeFarmer(world);
+            }
+            return;
+        }
+
+        // Scan 9-wide swath below hovering turtle
+        boolean foundAnyCropsOrFarmland = false;
+        for (int offset = -4; offset <= 4; offset++) {
+            BlockPos cropPos = this.pos.offset(left, offset).down();
+            BlockState cropState = world.getBlockState(cropPos);
+
+            if (cropState.getBlock() instanceof CropBlock cropBlock) {
+                foundAnyCropsOrFarmland = true;
+                if (cropBlock.isMature(cropState)) {
+                    dig(world, cropPos);
+                    world.setBlockState(cropPos, cropBlock.withAge(0), Block.NOTIFY_ALL);
+                    consumeSeedForCrop(cropBlock);
+                    damageTool();
+                    world.playSound(null, cropPos, SoundEvents.ITEM_CROP_PLANT, SoundCategory.BLOCKS, 0.8f, 1.0f);
+                }
+            } else if (cropState.isOf(Blocks.FARMLAND) || world.getBlockState(cropPos.down()).isOf(Blocks.FARMLAND)) {
+                foundAnyCropsOrFarmland = true;
             }
         }
 
+        // Vacuum drops in 5-block radius into turtle
+        Box vacuumBox = new Box(this.pos).expand(5, 3, 5);
+        List<ItemEntity> drops = world.getEntitiesByClass(ItemEntity.class, vacuumBox, e -> e.isAlive());
+        for (ItemEntity drop : drops) {
+            ItemStack leftover = insertItem(drop.getStack());
+            if (leftover.isEmpty()) {
+                drop.discard();
+            } else {
+                drop.setStack(leftover);
+            }
+        }
+
+        // Auto-stop if we left the farm (no crops or farmland detected in this 9-wide row)
+        if (this.stepsMoved > 0 && !foundAnyCropsOrFarmland) {
+            move(world, Direction.DOWN);
+            this.status = TurtleStatus.COMPLETED;
+            this.progress = 100;
+            markDirty();
+            return;
+        }
+
+        // Move forward 1 block (hovering)
         TurtleBlockEntity movedTurtle = move(world, facing);
         if (movedTurtle != null) {
             movedTurtle.stepsMoved++;
-            movedTurtle.progress = (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance;
+            movedTurtle.progress = Math.min(100, (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance);
             if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
+                movedTurtle.move(world, Direction.DOWN);
                 movedTurtle.status = TurtleStatus.COMPLETED;
             }
             movedTurtle.markDirty();
+        } else {
+            move(world, Direction.DOWN);
+            this.status = TurtleStatus.BLOCKED;
+            markDirty();
         }
     }
 
@@ -1014,6 +1270,19 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     @Override
     public void setStack(int slot, ItemStack stack) {
         this.items.set(slot, stack);
+        if (slot == TurtleScreenHandler.DISK_SLOT && this.status != TurtleStatus.RUNNING) {
+            if (stack.getItem() instanceof FloppyDiskItem diskItem && diskItem.getAppType() != AppType.NONE) {
+                this.configDistance = diskItem.getAppType().getDefaultDistance();
+                this.stepsMoved = 0;
+                this.progress = 0;
+                this.quarryLayer = 0;
+                this.quarryIndex = 0;
+                this.farmIndex = 0;
+                this.farmRow = -1;
+                this.farmMoveStep = 0;
+                this.status = TurtleStatus.IDLE;
+            }
+        }
         markDirty();
     }
 
@@ -1057,6 +1326,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         view.putInt("progress", this.progress);
         view.putInt("quarryLayer", this.quarryLayer);
         view.putInt("quarryIndex", this.quarryIndex);
+        view.putInt("farmIndex", this.farmIndex);
+        view.putInt("farmRow", this.farmRow);
+        view.putInt("farmMoveStep", this.farmMoveStep);
     }
 
     @Override
@@ -1072,5 +1344,8 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         this.progress = view.getInt("progress", 0);
         this.quarryLayer = view.getInt("quarryLayer", 0);
         this.quarryIndex = view.getInt("quarryIndex", 0);
+        this.farmIndex = view.getInt("farmIndex", 0);
+        this.farmRow = view.getInt("farmRow", -1);
+        this.farmMoveStep = view.getInt("farmMoveStep", 0);
     }
 }

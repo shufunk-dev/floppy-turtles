@@ -9,7 +9,8 @@ public enum AppType {
     QUARRY("quarry", "Quarry 3x3", "Digs a 3x3 shaft straight down layer-by-layer.", Items.DIAMOND_PICKAXE, 20),
     BUILDER("builder", "Bridge Builder", "Paves bridges across gaps using blocks from inventory.", Items.STONE_BRICKS, 32),
     LUMBERJACK("lumberjack", "Tree Feller", "Chops down trees from base to canopy and collects wood.", Items.IRON_AXE, 16),
-    FARMER("farmer", "Crop Harvester", "Harvests mature crops and automatically replants seeds.", Items.IRON_HOE, 16),
+    FARMER("farmer", "Crop Harvester", "Sweeps a 9-wide swath, harvesting and replanting crops.", Items.IRON_HOE, 9),
+    FARM_CREATOR("farm_creator", "Farm Creator", "Constructs a hydrated 9x9 tilled and seeded farm.", Items.WATER_BUCKET, 1),
     SENTRY("sentry", "Mob Sentry", "Patrols area and attacks hostile monsters with equipped weapon.", Items.IRON_SWORD, 10);
 
     private final String id;

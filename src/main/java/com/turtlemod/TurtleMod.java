@@ -40,6 +40,7 @@ public class TurtleMod implements ModInitializer {
     public static final RegistryKey<Item> DISK_BUILDER_KEY = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(MOD_ID, "floppy_disk_builder"));
     public static final RegistryKey<Item> DISK_LUMBERJACK_KEY = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(MOD_ID, "floppy_disk_lumberjack"));
     public static final RegistryKey<Item> DISK_FARMER_KEY = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(MOD_ID, "floppy_disk_farmer"));
+    public static final RegistryKey<Item> DISK_FARM_CREATOR_KEY = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(MOD_ID, "floppy_disk_farm_creator"));
     public static final RegistryKey<Item> DISK_SENTRY_KEY = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(MOD_ID, "floppy_disk_sentry"));
 
     // Block & Item
@@ -69,6 +70,7 @@ public class TurtleMod implements ModInitializer {
     public static final Item DISK_BUILDER = new FloppyDiskItem(new Item.Settings().registryKey(DISK_BUILDER_KEY).maxCount(1), AppType.BUILDER);
     public static final Item DISK_LUMBERJACK = new FloppyDiskItem(new Item.Settings().registryKey(DISK_LUMBERJACK_KEY).maxCount(1), AppType.LUMBERJACK);
     public static final Item DISK_FARMER = new FloppyDiskItem(new Item.Settings().registryKey(DISK_FARMER_KEY).maxCount(1), AppType.FARMER);
+    public static final Item DISK_FARM_CREATOR = new FloppyDiskItem(new Item.Settings().registryKey(DISK_FARM_CREATOR_KEY).maxCount(1), AppType.FARM_CREATOR);
     public static final Item DISK_SENTRY = new FloppyDiskItem(new Item.Settings().registryKey(DISK_SENTRY_KEY).maxCount(1), AppType.SENTRY);
 
     // Item Group
@@ -84,6 +86,7 @@ public class TurtleMod implements ModInitializer {
                 entries.add(DISK_BUILDER);
                 entries.add(DISK_LUMBERJACK);
                 entries.add(DISK_FARMER);
+                entries.add(DISK_FARM_CREATOR);
                 entries.add(DISK_SENTRY);
             })
             .build();
@@ -117,6 +120,7 @@ public class TurtleMod implements ModInitializer {
         Registry.register(Registries.ITEM, DISK_BUILDER_KEY, DISK_BUILDER);
         Registry.register(Registries.ITEM, DISK_LUMBERJACK_KEY, DISK_LUMBERJACK);
         Registry.register(Registries.ITEM, DISK_FARMER_KEY, DISK_FARMER);
+        Registry.register(Registries.ITEM, DISK_FARM_CREATOR_KEY, DISK_FARM_CREATOR);
         Registry.register(Registries.ITEM, DISK_SENTRY_KEY, DISK_SENTRY);
 
         // Register Creative Tab
