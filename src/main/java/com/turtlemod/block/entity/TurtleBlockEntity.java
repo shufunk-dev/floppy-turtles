@@ -778,29 +778,27 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         clearFoliage(world, frontPos);
         clearFoliage(world, frontPos.up());
 
-        // 3. Move forward along the path (with natural terrain hill climbing/descent)
+        // 3. Move forward along the path (with natural terrain hill climbing)
         TurtleBlockEntity movedTurtle = move(world, facing);
         if (movedTurtle == null) {
+            // Check if there is a 1-block rise we can step up onto
+            BlockPos upPos = this.pos.up();
             BlockPos upTarget = frontPos.up();
-            clearFoliage(world, this.pos.up());
+            clearFoliage(world, upPos);
             clearFoliage(world, upTarget);
 
-            if (isPassable(world, upTarget)) {
+            if (isPassable(world, upPos) && isPassable(world, upTarget)) {
                 TurtleBlockEntity upTurtle = move(world, Direction.UP);
                 if (upTurtle != null) {
                     movedTurtle = upTurtle.move(world, facing);
+                    if (movedTurtle == null) {
+                        upTurtle.move(world, Direction.DOWN);
+                    }
                 }
             }
         }
 
-        // 4. If forward was blocked by dirt or a steep rise, dig through
-        if (movedTurtle == null) {
-            dig(world, frontPos);
-            dig(world, frontPos.up());
-            movedTurtle = move(world, facing);
-        }
-
-        // 5. If moved forward and there is a 1-block drop, step down onto the terrain
+        // 4. If moved forward and there is a 1-block drop, step down onto the terrain
         if (movedTurtle != null) {
             BlockPos below = movedTurtle.pos.down();
             if (isPassable(world, below)) {
