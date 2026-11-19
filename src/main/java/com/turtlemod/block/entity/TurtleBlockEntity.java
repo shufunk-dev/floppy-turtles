@@ -482,13 +482,19 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
         BlockPos targetPos = this.pos.offset(dir);
         if (!world.isInBuildLimit(targetPos)) {
-            this.status = TurtleStatus.BLOCKED;
             return null;
         }
 
         BlockState targetState = world.getBlockState(targetPos);
+        // Break non-solid obstacles (flowers, tall grass, ferns, saplings) so turtle can enter
         if (!targetState.isAir() && !targetState.isLiquid() && !targetState.isReplaceable()) {
-            this.status = TurtleStatus.BLOCKED;
+            if (targetState.getCollisionShape(world, targetPos).isEmpty()) {
+                dig(world, targetPos);
+                targetState = world.getBlockState(targetPos);
+            }
+        }
+
+        if (!targetState.isAir() && !targetState.isLiquid() && !targetState.isReplaceable()) {
             return null;
         }
 
@@ -766,21 +772,20 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             return; // Tree felled; next tick will check for any other nearby trees before moving
         }
 
-        // 2. Clear leaves in the 1x2 movement path ahead
+        // 2. Clear leaves and non-solid foliage in path and above turtle head
         BlockPos frontPos = this.pos.offset(facing);
-        if (world.getBlockState(frontPos).isIn(BlockTags.LEAVES)) {
-            dig(world, frontPos);
-        }
-        if (world.getBlockState(frontPos.up()).isIn(BlockTags.LEAVES)) {
-            dig(world, frontPos.up());
-        }
+        clearFoliage(world, this.pos.up());
+        clearFoliage(world, frontPos);
+        clearFoliage(world, frontPos.up());
 
         // 3. Move forward along the path (with natural terrain hill climbing/descent)
         TurtleBlockEntity movedTurtle = move(world, facing);
         if (movedTurtle == null) {
             BlockPos upTarget = frontPos.up();
-            BlockState frontStateNow = world.getBlockState(frontPos);
-            if (!frontStateNow.isAir() && world.getBlockState(upTarget).isAir()) {
+            clearFoliage(world, this.pos.up());
+            clearFoliage(world, upTarget);
+
+            if (isPassable(world, upTarget)) {
                 TurtleBlockEntity upTurtle = move(world, Direction.UP);
                 if (upTurtle != null) {
                     movedTurtle = upTurtle.move(world, facing);
@@ -788,9 +793,17 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             }
         }
 
+        // 4. If forward was blocked by dirt or a steep rise, dig through
+        if (movedTurtle == null) {
+            dig(world, frontPos);
+            dig(world, frontPos.up());
+            movedTurtle = move(world, facing);
+        }
+
+        // 5. If moved forward and there is a 1-block drop, step down onto the terrain
         if (movedTurtle != null) {
             BlockPos below = movedTurtle.pos.down();
-            if (world.getBlockState(below).isAir()) {
+            if (isPassable(world, below)) {
                 TurtleBlockEntity downTurtle = movedTurtle.move(world, Direction.DOWN);
                 if (downTurtle != null) {
                     movedTurtle = downTurtle;
@@ -803,6 +816,22 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 movedTurtle.status = TurtleStatus.COMPLETED;
             }
             movedTurtle.markDirty();
+        } else {
+            this.status = TurtleStatus.BLOCKED;
+            markDirty();
+        }
+    }
+
+    private boolean isPassable(ServerWorld world, BlockPos pos) {
+        BlockState state = world.getBlockState(pos);
+        if (state.isAir() || state.isLiquid() || state.isReplaceable()) return true;
+        return state.getCollisionShape(world, pos).isEmpty();
+    }
+
+    private void clearFoliage(ServerWorld world, BlockPos pos) {
+        BlockState state = world.getBlockState(pos);
+        if (state.isIn(BlockTags.LEAVES) || (!state.isAir() && state.getCollisionShape(world, pos).isEmpty())) {
+            dig(world, pos);
         }
     }
 
