@@ -134,7 +134,8 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
             case NO_TOOL -> (app == AppType.MINER || app == AppType.QUARRY ? "Need Pickaxe!" :
                             (app == AppType.LUMBERJACK ? "Need Axe!" :
                             (app == AppType.FARMER || app == AppType.FARM_CREATOR ? "Need Hoe!" :
-                            (app == AppType.BUILDER ? "Need Blocks!" : "Need Tool!"))));
+                            (app == AppType.BUILDER ? "Need Blocks!" :
+                            (app == AppType.SENTRY ? "Need Sword!" : "Need Tool!")))));
             case OUT_OF_FUEL -> "Out of Fuel!";
             case RUNNING -> "Running (" + this.handler.getProgress() + "%)";
             case COMPLETED -> "Done!";

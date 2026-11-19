@@ -13,6 +13,8 @@ import net.minecraft.block.CropBlock;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.mob.Monster;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventories;
@@ -270,6 +272,8 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                     else this.configDistance = 1;
                 } else if (app == AppType.FARMER) {
                     this.configDistance = Math.max(9, this.configDistance - 9);
+                } else if (app == AppType.SENTRY) {
+                    this.configDistance = Math.max(3, this.configDistance - 1);
                 } else {
                     this.configDistance = Math.max(4, this.configDistance - 4);
                 }
@@ -285,6 +289,8 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                     else this.configDistance = 5;
                 } else if (app == AppType.FARMER) {
                     this.configDistance = Math.min(72, this.configDistance + 9);
+                } else if (app == AppType.SENTRY) {
+                    this.configDistance = Math.min(10, this.configDistance + 1);
                 } else {
                     this.configDistance = Math.min(128, this.configDistance + 4);
                 }
@@ -1426,14 +1432,31 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         }
     }
 
+    private float getSwordDamage(ItemStack sword) {
+        if (sword.isOf(Items.NETHERITE_SWORD)) return 8.0f;
+        if (sword.isOf(Items.DIAMOND_SWORD)) return 7.0f;
+        if (sword.isOf(Items.IRON_SWORD)) return 6.0f;
+        if (sword.isOf(Items.STONE_SWORD)) return 5.0f;
+        return 4.0f;
+    }
+
     private void executeSentry(ServerWorld world) {
-        Box searchBox = new Box(this.pos).expand(4, 2, 4);
-        List<HostileEntity> monsters = world.getEntitiesByClass(HostileEntity.class, searchBox, e -> e.isAlive());
+        if (!hasRequiredTool(AppType.SENTRY)) {
+            this.status = TurtleStatus.NO_TOOL;
+            markDirty();
+            return;
+        }
+
+        int radius = Math.max(3, Math.min(10, this.configDistance));
+        Box searchBox = new Box(this.pos).expand(radius, 3, radius);
+        List<MobEntity> monsters = world.getEntitiesByClass(MobEntity.class, searchBox, e -> e.isAlive() && e instanceof Monster);
 
         if (!monsters.isEmpty()) {
-            HostileEntity target = monsters.get(0);
+            MobEntity target = monsters.get(0);
             if (consumeFuel(1)) {
-                target.damage(world, world.getDamageSources().generic(), 6.0f);
+                ItemStack tool = getToolStack();
+                float dmg = getSwordDamage(tool);
+                target.damage(world, world.getDamageSources().generic(), dmg);
                 damageTool();
                 world.playSound(null, this.pos, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.BLOCKS, 1.0f, 1.0f);
 
@@ -1447,6 +1470,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                         drop.setStack(leftover);
                     }
                 }
+                markDirty();
             }
         }
     }
