@@ -46,14 +46,14 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
             if (this.client != null && this.client.interactionManager != null) {
                 this.client.interactionManager.clickButton(this.handler.syncId, 0);
             }
-        }).dimensions(startX + 38, startY + 51, 32, 15).build());
+        }).dimensions(startX + 38, startY + 52, 33, 16).build());
 
         // Button 1: Stop
         this.addDrawableChild(ButtonWidget.builder(Text.literal("STOP"), btn -> {
             if (this.client != null && this.client.interactionManager != null) {
                 this.client.interactionManager.clickButton(this.handler.syncId, 1);
             }
-        }).dimensions(startX + 74, startY + 51, 32, 15).build());
+        }).dimensions(startX + 73, startY + 52, 33, 16).build());
     }
 
     @Override
@@ -62,32 +62,38 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
         int startY = this.y;
         context.drawTexture(RenderPipelines.GUI_TEXTURED, TEXTURE, startX, startY, 0.0f, 0.0f, this.backgroundWidth, this.backgroundHeight, 256, 256);
 
-        // Fuel Bar: (startX + 38, startY + 69, width: 68, height: 5)
+        // Fuel Bar: in top inset box (startX + 40, startY + 16, width: 64, height: 6)
         int fuel = this.handler.getFuel();
         int maxFuel = this.handler.getMaxFuel();
-        int fuelBarWidth = Math.min(68, (int) ((fuel / (float) maxFuel) * 68));
+        int fuelBarWidth = Math.min(64, (int) ((fuel / (float) maxFuel) * 64));
 
         // Fuel bar background
-        context.fill(startX + 38, startY + 69, startX + 106, startY + 74, 0xFF222222);
-        // Fuel bar filled
+        context.fill(startX + 40, startY + 16, startX + 104, startY + 22, 0xFF262626);
+        // Fuel bar filled with orange
         if (fuelBarWidth > 0) {
-            context.fill(startX + 38, startY + 69, startX + 38 + fuelBarWidth, startY + 74, 0xFFFF7700);
+            context.fill(startX + 40, startY + 16, startX + 40 + fuelBarWidth, startY + 22, 0xFFFF7700);
         }
+
+        // Distance Counter Display Box: between [-] and [+] (startX + 54, startY + 35, width 36, height 14)
+        context.fill(startX + 54, startY + 35, startX + 90, startY + 49, 0xFF3A3A3A);
+        context.fill(startX + 55, startY + 36, startX + 89, startY + 48, 0xFF141414);
     }
 
     @Override
     protected void drawForeground(DrawContext context, int mouseX, int mouseY) {
-        context.drawText(this.textRenderer, this.title, this.titleX, 6, 0x404040, false);
+        // Window Title: (x=titleX, y=6)
+        context.drawText(this.textRenderer, this.title, this.titleX, 6, 0xFF404040, false);
 
         int statusId = this.handler.getStatusId();
         TurtleStatus status = TurtleStatus.fromIndex(statusId);
         AppType app = AppType.fromIndex(this.handler.getAppTypeId());
 
-        // 1. Program Name (y = 15)
+        // 1. Program Name & Status: (y = 25)
+        String appName;
         if (app == AppType.NONE) {
-            context.drawText(this.textRenderer, Text.literal("No Disk"), 38, 15, 0x888888, false);
+            appName = "No Program";
         } else {
-            String appName = switch (app) {
+            appName = switch (app) {
                 case MINER -> "3x3 Miner";
                 case QUARRY -> "Quarry 3x3";
                 case BUILDER -> "Builder";
@@ -96,59 +102,43 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
                 case SENTRY -> "Sentry";
                 default -> app.name();
             };
-            context.drawText(this.textRenderer, Text.literal(appName), 38, 15, 0x0044AA, false);
         }
+        context.drawText(this.textRenderer, Text.literal(appName), 38, 25, 0xFF003388, false);
 
-        // 2. Status Label (y = 25)
-        String statusText;
-        int statusColor;
-        if (app == AppType.NONE) {
-            statusText = "Insert Disk";
-            statusColor = 0xAA6600;
-        } else if (status == TurtleStatus.NO_TOOL) {
-            statusText = switch (app) {
-                case MINER, QUARRY -> "Need Pickaxe";
-                case LUMBERJACK -> "Need Axe";
-                case FARMER -> "Need Hoe";
-                case SENTRY -> "Need Sword";
-                default -> "Need Tool";
-            };
-            statusColor = 0xDD4400;
-        } else if (status == TurtleStatus.OUT_OF_FUEL) {
-            statusText = "Need Fuel";
-            statusColor = 0xCC0000;
-        } else if (status == TurtleStatus.RUNNING) {
-            statusText = "Running " + this.handler.getProgress() + "%";
-            statusColor = 0x008800;
-        } else if (status == TurtleStatus.COMPLETED) {
-            statusText = "Done!";
-            statusColor = 0x0088AA;
-        } else if (status == TurtleStatus.PAUSED) {
-            statusText = "Paused";
-            statusColor = 0x888800;
-        } else if (status == TurtleStatus.BLOCKED) {
-            statusText = "Blocked";
-            statusColor = 0xCC0000;
-        } else {
-            statusText = "Idle";
-            statusColor = 0x666666;
-        }
-        context.drawText(this.textRenderer, Text.literal(statusText), 38, 25, statusColor, false);
+        // Status text on right (y = 25)
+        String statusText = switch (status) {
+            case NO_TOOL -> (app == AppType.MINER ? "Need Pick!" : "Need Tool!");
+            case OUT_OF_FUEL -> "No Fuel!";
+            case RUNNING -> this.handler.getProgress() + "%";
+            case COMPLETED -> "Done!";
+            case PAUSED -> "Paused";
+            case BLOCKED -> "Blocked!";
+            default -> (app == AppType.NONE ? "Insert Disk" : "Ready");
+        };
+        int statusColor = switch (status) {
+            case NO_TOOL, OUT_OF_FUEL, BLOCKED -> 0xFFFF2222;
+            case RUNNING -> 0xFF009900;
+            case COMPLETED -> 0xFF0088DD;
+            case PAUSED -> 0xFFBBAA00;
+            default -> 0xFF555555;
+        };
+        int statusWidth = this.textRenderer.getWidth(statusText);
+        context.drawText(this.textRenderer, Text.literal(statusText), 106 - statusWidth, 25, statusColor, false);
 
-        // 3. Distance Setting Display (centered between minus and plus, y = 38)
+        // 2. Distance number in the LCD box (between [-] and [+], y = 35..49, box is at x=54..90)
         String distStr = this.handler.getConfigDistance() + "m";
         int distWidth = this.textRenderer.getWidth(distStr);
-        int centerX = 52 + (40 - distWidth) / 2;
-        context.drawText(this.textRenderer, Text.literal(distStr), centerX, 38, 0x222222, false);
+        int textX = 54 + (36 - distWidth) / 2;
+        context.drawText(this.textRenderer, Text.literal(distStr), textX, 39, 0xFF00FF88, false);
 
-        // 4. Fuel Display at Top Right Header (y = 6)
+        // 3. Fuel count text in header (y = 6)
         int fuel = this.handler.getFuel();
         String fuelStr = fuel + "F";
         int fuelWidth = this.textRenderer.getWidth(fuelStr);
-        context.drawText(this.textRenderer, Text.literal(fuelStr), 106 - fuelWidth, 6, 0xD45500, false);
+        context.drawText(this.textRenderer, Text.literal(fuelStr), 106 - fuelWidth, 6, 0xFFCC5500, false);
 
         // Player Inventory label
-        context.drawText(this.textRenderer, this.playerInventoryTitle, this.playerInventoryTitleX, this.playerInventoryTitleY, 0x404040, false);
+        context.drawText(this.textRenderer, this.playerInventoryTitle, this.playerInventoryTitleX, this.playerInventoryTitleY, 0xFF404040, false);
     }
 
     @Override
@@ -164,12 +154,23 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
         int startX = this.x;
         int startY = this.y;
 
-        // Hover over Program Name (startX + 38..106, startY + 14..24)
-        if (x >= startX + 38 && x <= startX + 106 && y >= startY + 14 && y <= startY + 24) {
+        // Hover over Fuel Bar (startX + 40..104, startY + 16..22)
+        if (x >= startX + 40 && x <= startX + 104 && y >= startY + 16 && y <= startY + 22) {
+            int fuel = this.handler.getFuel();
+            int maxFuel = this.handler.getMaxFuel();
+            context.drawTooltip(this.textRenderer, java.util.List.of(
+                Text.literal("§6Fuel Gauge: " + fuel + " / " + maxFuel + "§r"),
+                Text.literal("§7Insert Coal or Charcoal into the bottom-left fuel slot§r")
+            ), x, y);
+        }
+
+        // Hover over Program & Status (startX + 38..106, startY + 23..34)
+        if (x >= startX + 38 && x <= startX + 106 && y >= startY + 23 && y <= startY + 34) {
             AppType app = AppType.fromIndex(this.handler.getAppTypeId());
+            TurtleStatus status = TurtleStatus.fromIndex(this.handler.getStatusId());
             if (app != AppType.NONE) {
                 context.drawTooltip(this.textRenderer, java.util.List.of(
-                    Text.literal("§9§l" + app.getDisplayName() + "§r"),
+                    Text.literal("§9§l" + app.getDisplayName() + "§r §8(" + status.getLabel() + ")§r"),
                     Text.literal("§7" + app.getDescription() + "§r")
                 ), x, y);
             } else {
@@ -177,21 +178,11 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
             }
         }
 
-        // Hover over Distance Area (startX + 38..106, startY + 35..49)
-        if (x >= startX + 52 && x <= startX + 92 && y >= startY + 35 && y <= startY + 49) {
+        // Hover over Distance Counter (startX + 54..90, startY + 35..49)
+        if (x >= startX + 54 && x <= startX + 90 && y >= startY + 35 && y <= startY + 49) {
             context.drawTooltip(this.textRenderer, java.util.List.of(
                 Text.literal("§6Target Distance: " + this.handler.getConfigDistance() + " blocks§r"),
                 Text.literal("§7Click [-] or [+] to configure§r")
-            ), x, y);
-        }
-
-        // Hover over Fuel Bar (startX + 38..106, startY + 68..75)
-        if (x >= startX + 38 && x <= startX + 106 && y >= startY + 68 && y <= startY + 75) {
-            int fuel = this.handler.getFuel();
-            int maxFuel = this.handler.getMaxFuel();
-            context.drawTooltip(this.textRenderer, java.util.List.of(
-                Text.literal("§6Fuel Reserve: " + fuel + " / " + maxFuel + "§r"),
-                Text.literal("§7Insert Coal or Charcoal into the bottom-left fuel slot§r")
             ), x, y);
         }
 
