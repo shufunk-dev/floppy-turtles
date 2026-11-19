@@ -767,8 +767,29 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             return;
         }
 
+        // Try moving forward; if blocked by a 1-block natural terrain rise, step up onto it
         TurtleBlockEntity movedTurtle = move(world, facing);
+        if (movedTurtle == null) {
+            BlockPos upTarget = frontPos.up();
+            BlockState frontStateNow = world.getBlockState(frontPos);
+            if (!frontStateNow.isAir() && world.getBlockState(upTarget).isAir()) {
+                TurtleBlockEntity upTurtle = move(world, Direction.UP);
+                if (upTurtle != null) {
+                    movedTurtle = upTurtle.move(world, facing);
+                }
+            }
+        }
+
+        // If moved forward and there is a 1-block drop, step down to hug the terrain
         if (movedTurtle != null) {
+            BlockPos below = movedTurtle.pos.down();
+            if (world.getBlockState(below).isAir()) {
+                TurtleBlockEntity downTurtle = movedTurtle.move(world, Direction.DOWN);
+                if (downTurtle != null) {
+                    movedTurtle = downTurtle;
+                }
+            }
+
             movedTurtle.stepsMoved++;
             movedTurtle.progress = (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance;
             if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
