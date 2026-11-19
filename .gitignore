@@ -1,11 +1,22 @@
+# Gradle & Build
 .gradle/
 build/
 bin/
 out/
+
+# IDE & Editor
 .idea/
 *.iml
 *.ipr
 *.iws
 .vscode/
+
+# Minecraft & Loom
 run/
 logs/
+crash-reports/
+*.log
+
+# OS & Temp
+.DS_Store
+Thumbs.db
