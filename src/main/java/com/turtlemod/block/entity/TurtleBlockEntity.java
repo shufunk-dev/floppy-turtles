@@ -264,6 +264,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 AppType app = getAppType();
                 if (app == AppType.FARM_CREATOR) {
                     this.configDistance = Math.max(1, this.configDistance - 1);
+                } else if (app == AppType.BUILDER) {
+                    if (this.configDistance == 5) this.configDistance = 3;
+                    else if (this.configDistance == 3) this.configDistance = 1;
+                    else this.configDistance = 1;
                 } else if (app == AppType.FARMER) {
                     this.configDistance = Math.max(9, this.configDistance - 9);
                 } else {
@@ -275,6 +279,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 AppType app = getAppType();
                 if (app == AppType.FARM_CREATOR) {
                     this.configDistance = Math.min(3, this.configDistance + 1);
+                } else if (app == AppType.BUILDER) {
+                    if (this.configDistance == 1) this.configDistance = 3;
+                    else if (this.configDistance == 3) this.configDistance = 5;
+                    else this.configDistance = 5;
                 } else if (app == AppType.FARMER) {
                     this.configDistance = Math.min(72, this.configDistance + 9);
                 } else {
@@ -710,40 +718,164 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
     private void executeBuilder(ServerWorld world) {
         Direction facing = getFacing();
-        if (this.stepsMoved >= this.configDistance) {
+        Direction left = facing.rotateYCounterclockwise();
+
+        if (this.stepsMoved >= 64) {
             this.status = TurtleStatus.COMPLETED;
             markDirty();
             return;
         }
 
-        BlockPos belowTarget = this.pos.offset(facing).down();
-        BlockState belowState = world.getBlockState(belowTarget);
-        if (belowState.isAir() || belowState.isLiquid() || belowState.isReplaceable()) {
-            boolean placed = placeSolidBlock(world, belowTarget);
-            if (!placed) {
-                this.status = TurtleStatus.BLOCKED; // Out of building blocks
-                markDirty();
-                return;
+        int width = (this.configDistance == 3 || this.configDistance == 5) ? this.configDistance : 1;
+
+        // 1. Pave foundation floor blocks underneath the bridge row ahead
+        int[] floorOffsets = switch (width) {
+            case 3 -> new int[]{-1, 0, 1};
+            case 5 -> new int[]{-2, -1, 0, 1, 2};
+            default -> new int[]{0};
+        };
+
+        boolean neededPaving = false;
+        for (int offset : floorOffsets) {
+            BlockPos floorPos = this.pos.offset(facing).offset(left, offset).down();
+            BlockState floorState = world.getBlockState(floorPos);
+            if (floorState.isAir() || floorState.isLiquid() || floorState.isReplaceable()) {
+                neededPaving = true;
+                boolean placed = placeSolidBlock(world, floorPos);
+                if (!placed) {
+                    this.status = TurtleStatus.NO_TOOL; // Shows "Need Blocks!"
+                    markDirty();
+                    return;
+                }
             }
         }
 
-        BlockPos frontPos = this.pos.offset(facing);
-        if (!world.getBlockState(frontPos).isAir()) {
-            dig(world, frontPos);
+        // 2. If 5-Wide mode, place guard rails on the outer edges (-2 and +2)
+        if (width == 5) {
+            for (int offset : new int[]{-2, 2}) {
+                BlockPos railPos = this.pos.offset(facing).offset(left, offset);
+                BlockState railState = world.getBlockState(railPos);
+                if (railState.isAir() || railState.isLiquid() || railState.isReplaceable()) {
+                    placeRailingBlock(world, railPos);
+                }
+            }
         }
 
+        // 3. Clear walkway clearance (2 blocks high for walking corridor)
+        int[] walkOffsets = switch (width) {
+            case 3, 5 -> new int[]{-1, 0, 1};
+            default -> new int[]{0};
+        };
+
+        for (int offset : walkOffsets) {
+            BlockPos walkFoot = this.pos.offset(facing).offset(left, offset);
+            BlockPos walkHead = walkFoot.up();
+            if (!world.getBlockState(walkFoot).isAir() && !world.getBlockState(walkFoot).isLiquid()) {
+                dig(world, walkFoot);
+            }
+            if (!world.getBlockState(walkHead).isAir() && !world.getBlockState(walkHead).isLiquid()) {
+                dig(world, walkHead);
+            }
+        }
+
+        // 4. Advance forward 1 block
         TurtleBlockEntity movedTurtle = move(world, facing);
         if (movedTurtle != null) {
             movedTurtle.stepsMoved++;
-            movedTurtle.progress = (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance;
-            if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
+            movedTurtle.progress = Math.min(100, (movedTurtle.stepsMoved * 100) / 64);
+
+            // Auto-Touchdown: If we have moved at least 3 blocks, and the row ahead is naturally solid ground across all offsets, we have bridged the gap!
+            if (movedTurtle.stepsMoved >= 3 && !neededPaving) {
+                boolean allAheadSolid = true;
+                for (int offset : floorOffsets) {
+                    BlockPos aheadFloor = movedTurtle.pos.offset(facing).offset(left, offset).down();
+                    BlockState s = world.getBlockState(aheadFloor);
+                    if (s.isAir() || s.isLiquid() || s.isReplaceable()) {
+                        allAheadSolid = false;
+                        break;
+                    }
+                }
+                if (allAheadSolid) {
+                    movedTurtle.status = TurtleStatus.COMPLETED;
+                    movedTurtle.progress = 100;
+                    world.playSound(null, movedTurtle.pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                    movedTurtle.markDirty();
+                    return;
+                }
+            }
+
+            if (movedTurtle.stepsMoved >= 64) {
                 movedTurtle.status = TurtleStatus.COMPLETED;
+                movedTurtle.progress = 100;
+                world.playSound(null, movedTurtle.pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.BLOCKS, 1.0f, 1.0f);
             }
             movedTurtle.markDirty();
+        } else {
+            this.status = TurtleStatus.BLOCKED;
+            markDirty();
         }
     }
 
     private boolean placeSolidBlock(ServerWorld world, BlockPos targetPos) {
+        // First pass: try standard solid blocks (excluding fences and walls)
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack stack = this.items.get(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
+                Block block = blockItem.getBlock();
+                BlockState state = block.getDefaultState();
+                if (state.isIn(BlockTags.FENCES) || state.isIn(BlockTags.WALLS)) {
+                    continue;
+                }
+                if (state.isSolid()) {
+                    world.setBlockState(targetPos, state, Block.NOTIFY_ALL);
+                    stack.decrement(1);
+                    if (stack.isEmpty()) {
+                        this.items.set(i, ItemStack.EMPTY);
+                    }
+                    markDirty();
+                    return true;
+                }
+            }
+        }
+        // Fallback: any solid block
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack stack = this.items.get(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
+                Block block = blockItem.getBlock();
+                BlockState state = block.getDefaultState();
+                if (state.isSolid()) {
+                    world.setBlockState(targetPos, state, Block.NOTIFY_ALL);
+                    stack.decrement(1);
+                    if (stack.isEmpty()) {
+                        this.items.set(i, ItemStack.EMPTY);
+                    }
+                    markDirty();
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean placeRailingBlock(ServerWorld world, BlockPos targetPos) {
+        // First priority: any fence or wall
+        for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+            ItemStack stack = this.items.get(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
+                Block block = blockItem.getBlock();
+                BlockState state = block.getDefaultState();
+                if (state.isIn(BlockTags.FENCES) || state.isIn(BlockTags.WALLS)) {
+                    world.setBlockState(targetPos, state, Block.NOTIFY_ALL);
+                    stack.decrement(1);
+                    if (stack.isEmpty()) {
+                        this.items.set(i, ItemStack.EMPTY);
+                    }
+                    markDirty();
+                    return true;
+                }
+            }
+        }
+        // Fallback: any solid block
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
             ItemStack stack = this.items.get(i);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {

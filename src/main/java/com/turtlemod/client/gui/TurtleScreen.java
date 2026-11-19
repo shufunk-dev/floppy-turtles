@@ -119,6 +119,9 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
         if (app == AppType.FARM_CREATOR) {
             int farms = this.handler.getConfigDistance();
             distStr = (farms <= 1 ? "1 Farm" : farms + " Farms");
+        } else if (app == AppType.BUILDER) {
+            int w = this.handler.getConfigDistance();
+            distStr = (w == 5 ? "5-Wide" : (w == 3 ? "3-Wide" : "1-Wide"));
         } else {
             distStr = this.handler.getConfigDistance() + "m";
         }
@@ -130,7 +133,8 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
         String statusText = switch (status) {
             case NO_TOOL -> (app == AppType.MINER || app == AppType.QUARRY ? "Need Pickaxe!" :
                             (app == AppType.LUMBERJACK ? "Need Axe!" :
-                            (app == AppType.FARMER || app == AppType.FARM_CREATOR ? "Need Hoe!" : "Need Tool!")));
+                            (app == AppType.FARMER || app == AppType.FARM_CREATOR ? "Need Hoe!" :
+                            (app == AppType.BUILDER ? "Need Blocks!" : "Need Tool!"))));
             case OUT_OF_FUEL -> "Out of Fuel!";
             case RUNNING -> "Running (" + this.handler.getProgress() + "%)";
             case COMPLETED -> "Done!";
