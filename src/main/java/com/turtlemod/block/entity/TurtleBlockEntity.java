@@ -1237,16 +1237,49 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         }
 
         // 5. Move forward 1 block (hovering)
-        TurtleBlockEntity movedTurtle = move(world, facing);
+        // Check if the terrace ahead rises up:
+        // If there are crops or farmland directly ahead at the turtle's hover height,
+        // we must step UP 1 block first so we hover above the elevated crops!
+        BlockPos frontPos = this.pos.offset(facing);
+        BlockState frontState = world.getBlockState(frontPos);
+        boolean frontHasElevatedCrops = frontState.getBlock() instanceof CropBlock || frontState.isOf(Blocks.FARMLAND);
+
+        if (!frontHasElevatedCrops) {
+            for (int offset = -4; offset <= 4; offset++) {
+                BlockState s = world.getBlockState(frontPos.offset(left, offset));
+                if (s.getBlock() instanceof CropBlock || s.isOf(Blocks.FARMLAND)) {
+                    frontHasElevatedCrops = true;
+                    break;
+                }
+            }
+        }
+
+        TurtleBlockEntity activeTurtle = this;
+        if (frontHasElevatedCrops) {
+            TurtleBlockEntity up = activeTurtle.move(world, Direction.UP);
+            if (up != null) {
+                activeTurtle = up;
+            }
+        }
+
+        TurtleBlockEntity movedTurtle = activeTurtle.move(world, facing);
         if (movedTurtle == null) {
-            // Check if terrain stepped up 1 block
-            TurtleBlockEntity up = move(world, Direction.UP);
+            // Check if terrain stepped up 1 block (e.g. wall/cliff)
+            TurtleBlockEntity up = activeTurtle.move(world, Direction.UP);
             if (up != null) {
                 movedTurtle = up.move(world, facing);
             }
         }
 
         if (movedTurtle != null) {
+            // If the terrace stepped down (both 1 and 2 blocks below are air), adjust hover down
+            if (world.getBlockState(movedTurtle.pos.down()).isAir() && world.getBlockState(movedTurtle.pos.down().down()).isAir()) {
+                TurtleBlockEntity down = movedTurtle.move(world, Direction.DOWN);
+                if (down != null) {
+                    movedTurtle = down;
+                }
+            }
+
             movedTurtle.stepsMoved++;
             movedTurtle.progress = Math.min(100, (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance);
             if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
@@ -1255,7 +1288,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             }
             movedTurtle.markDirty();
         } else {
-            move(world, Direction.DOWN);
+            activeTurtle.move(world, Direction.DOWN);
             this.status = TurtleStatus.BLOCKED;
             markDirty();
         }
