@@ -1172,36 +1172,50 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             return;
         }
 
-        // Hover check: if resting directly on solid ground, lift up 1 block above crops
-        if (!world.getBlockState(this.pos.down()).isAir()) {
-            TurtleBlockEntity up = move(world, Direction.UP);
-            if (up != null) {
-                up.executeFarmer(world);
+        // 1. Hover lift on initial start: if sitting directly on ground/farmland, lift up 1 block above crops
+        if (this.stepsMoved == 0) {
+            BlockState below = world.getBlockState(this.pos.down());
+            if (below.isSolidBlock(world, this.pos.down()) || below.isOf(Blocks.FARMLAND)) {
+                TurtleBlockEntity up = move(world, Direction.UP);
+                if (up != null) {
+                    up.executeFarmer(world);
+                }
+                return;
             }
-            return;
         }
 
-        // Scan 9-wide swath below hovering turtle
+        // 2. Scan 9-wide swath below hovering turtle
         boolean foundAnyCropsOrFarmland = false;
         for (int offset = -4; offset <= 4; offset++) {
-            BlockPos cropPos = this.pos.offset(left, offset).down();
-            BlockState cropState = world.getBlockState(cropPos);
+            BlockPos p1 = this.pos.offset(left, offset).down();
+            BlockPos p2 = p1.down();
 
-            if (cropState.getBlock() instanceof CropBlock cropBlock) {
+            BlockPos targetCrop = null;
+            BlockState cropState = null;
+
+            if (world.getBlockState(p1).getBlock() instanceof CropBlock) {
+                targetCrop = p1;
+                cropState = world.getBlockState(p1);
+            } else if (world.getBlockState(p2).getBlock() instanceof CropBlock) {
+                targetCrop = p2;
+                cropState = world.getBlockState(p2);
+            }
+
+            if (targetCrop != null && cropState != null && cropState.getBlock() instanceof CropBlock cropBlock) {
                 foundAnyCropsOrFarmland = true;
                 if (cropBlock.isMature(cropState)) {
-                    dig(world, cropPos);
-                    world.setBlockState(cropPos, cropBlock.withAge(0), Block.NOTIFY_ALL);
+                    dig(world, targetCrop);
+                    world.setBlockState(targetCrop, cropBlock.withAge(0), Block.NOTIFY_ALL);
                     consumeSeedForCrop(cropBlock);
                     damageTool();
-                    world.playSound(null, cropPos, SoundEvents.ITEM_CROP_PLANT, SoundCategory.BLOCKS, 0.8f, 1.0f);
+                    world.playSound(null, targetCrop, SoundEvents.ITEM_CROP_PLANT, SoundCategory.BLOCKS, 0.8f, 1.0f);
                 }
-            } else if (cropState.isOf(Blocks.FARMLAND) || world.getBlockState(cropPos.down()).isOf(Blocks.FARMLAND)) {
+            } else if (world.getBlockState(p1).isOf(Blocks.FARMLAND) || world.getBlockState(p2).isOf(Blocks.FARMLAND)) {
                 foundAnyCropsOrFarmland = true;
             }
         }
 
-        // Vacuum drops in 5-block radius into turtle
+        // 3. Vacuum drops in 5-block radius into turtle
         Box vacuumBox = new Box(this.pos).expand(5, 3, 5);
         List<ItemEntity> drops = world.getEntitiesByClass(ItemEntity.class, vacuumBox, e -> e.isAlive());
         for (ItemEntity drop : drops) {
@@ -1213,8 +1227,8 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             }
         }
 
-        // Auto-stop if we left the farm (no crops or farmland detected in this 9-wide row)
-        if (this.stepsMoved > 0 && !foundAnyCropsOrFarmland) {
+        // 4. Auto-stop if we left the farm (no crops or farmland detected after advancing into the field)
+        if (this.stepsMoved >= 2 && !foundAnyCropsOrFarmland) {
             move(world, Direction.DOWN);
             this.status = TurtleStatus.COMPLETED;
             this.progress = 100;
@@ -1222,7 +1236,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             return;
         }
 
-        // Move forward 1 block (hovering)
+        // 5. Move forward 1 block (hovering)
         TurtleBlockEntity movedTurtle = move(world, facing);
         if (movedTurtle == null) {
             // Check if terrain stepped up 1 block
@@ -1233,14 +1247,6 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         }
 
         if (movedTurtle != null) {
-            // If ground dipped down, adjust hover height down to stay 1 block above crops
-            if (world.getBlockState(movedTurtle.pos.down().down()).isAir() && world.getBlockState(movedTurtle.pos.down()).isAir()) {
-                TurtleBlockEntity down = movedTurtle.move(world, Direction.DOWN);
-                if (down != null) {
-                    movedTurtle = down;
-                }
-            }
-
             movedTurtle.stepsMoved++;
             movedTurtle.progress = Math.min(100, (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance);
             if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
