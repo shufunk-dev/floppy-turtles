@@ -81,14 +81,20 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
 
     @Override
     protected void drawForeground(DrawContext context, int mouseX, int mouseY) {
-        // Window Title: (x=titleX, y=6)
+        // 1. Header Title: "Turtle" on the left (x=8, y=6)
         context.drawText(this.textRenderer, this.title, this.titleX, 6, 0xFF404040, false);
 
         int statusId = this.handler.getStatusId();
         TurtleStatus status = TurtleStatus.fromIndex(statusId);
         AppType app = AppType.fromIndex(this.handler.getAppTypeId());
 
-        // 1. Program Name & Status: (y = 25)
+        // 2. Fuel count text in header on far right above storage grid (y=6, x=166 - width)
+        int fuel = this.handler.getFuel();
+        String fuelStr = fuel + "F";
+        int fuelWidth = this.textRenderer.getWidth(fuelStr);
+        context.drawText(this.textRenderer, Text.literal(fuelStr), 166 - fuelWidth, 6, 0xFFD45500, false);
+
+        // 3. Program Name: Centered between x=38 and x=106 (y=25)
         String appName;
         if (app == AppType.NONE) {
             appName = "No Program";
@@ -96,23 +102,31 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
             appName = switch (app) {
                 case MINER -> "3x3 Miner";
                 case QUARRY -> "Quarry 3x3";
-                case BUILDER -> "Builder";
+                case BUILDER -> "Bridge Builder";
                 case LUMBERJACK -> "Tree Feller";
                 case FARMER -> "Harvester";
                 case SENTRY -> "Sentry";
                 default -> app.name();
             };
         }
-        context.drawText(this.textRenderer, Text.literal(appName), 38, 25, 0xFF003388, false);
+        int nameWidth = this.textRenderer.getWidth(appName);
+        int nameX = 38 + Math.max(0, (68 - nameWidth) / 2);
+        context.drawText(this.textRenderer, Text.literal(appName), nameX, 25, 0xFF003388, false);
 
-        // Status text on right (y = 25)
+        // 4. Distance number in the LCD box (between [-] and [+], y=35..49, box is at x=54..90)
+        String distStr = this.handler.getConfigDistance() + "m";
+        int distWidth = this.textRenderer.getWidth(distStr);
+        int textX = 54 + (36 - distWidth) / 2;
+        context.drawText(this.textRenderer, Text.literal(distStr), textX, 39, 0xFF00FF88, false);
+
+        // 5. Status line: Centered below START/STOP buttons (y=70, x=38..106)
         String statusText = switch (status) {
-            case NO_TOOL -> (app == AppType.MINER ? "Need Pick!" : "Need Tool!");
-            case OUT_OF_FUEL -> "No Fuel!";
-            case RUNNING -> this.handler.getProgress() + "%";
+            case NO_TOOL -> (app == AppType.MINER ? "Need Pickaxe!" : "Need Tool!");
+            case OUT_OF_FUEL -> "Out of Fuel!";
+            case RUNNING -> "Running (" + this.handler.getProgress() + "%)";
             case COMPLETED -> "Done!";
             case PAUSED -> "Paused";
-            case BLOCKED -> "Blocked!";
+            case BLOCKED -> "Path Blocked!";
             default -> (app == AppType.NONE ? "Insert Disk" : "Ready");
         };
         int statusColor = switch (status) {
@@ -123,22 +137,8 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
             default -> 0xFF555555;
         };
         int statusWidth = this.textRenderer.getWidth(statusText);
-        context.drawText(this.textRenderer, Text.literal(statusText), 106 - statusWidth, 25, statusColor, false);
-
-        // 2. Distance number in the LCD box (between [-] and [+], y = 35..49, box is at x=54..90)
-        String distStr = this.handler.getConfigDistance() + "m";
-        int distWidth = this.textRenderer.getWidth(distStr);
-        int textX = 54 + (36 - distWidth) / 2;
-        context.drawText(this.textRenderer, Text.literal(distStr), textX, 39, 0xFF00FF88, false);
-
-        // 3. Fuel count text in header (y = 6)
-        int fuel = this.handler.getFuel();
-        String fuelStr = fuel + "F";
-        int fuelWidth = this.textRenderer.getWidth(fuelStr);
-        context.drawText(this.textRenderer, Text.literal(fuelStr), 106 - fuelWidth, 6, 0xFFCC5500, false);
-
-        // Player Inventory label
-        context.drawText(this.textRenderer, this.playerInventoryTitle, this.playerInventoryTitleX, this.playerInventoryTitleY, 0xFF404040, false);
+        int statusX = 38 + Math.max(0, (68 - statusWidth) / 2);
+        context.drawText(this.textRenderer, Text.literal(statusText), statusX, 70, statusColor, false);
     }
 
     @Override
@@ -183,6 +183,16 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
             context.drawTooltip(this.textRenderer, java.util.List.of(
                 Text.literal("§6Target Distance: " + this.handler.getConfigDistance() + " blocks§r"),
                 Text.literal("§7Click [-] or [+] to configure§r")
+            ), x, y);
+        }
+
+        // Hover over Status Line (startX + 38..106, startY + 68..79)
+        if (x >= startX + 38 && x <= startX + 106 && y >= startY + 68 && y <= startY + 79) {
+            TurtleStatus status = TurtleStatus.fromIndex(this.handler.getStatusId());
+            AppType app = AppType.fromIndex(this.handler.getAppTypeId());
+            context.drawTooltip(this.textRenderer, java.util.List.of(
+                Text.literal("§eStatus: " + status.getLabel() + "§r"),
+                Text.literal("§7Progress: " + this.handler.getProgress() + "% (" + app.getDisplayName() + ")§r")
             ), x, y);
         }
 

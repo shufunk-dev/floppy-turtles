@@ -23,6 +23,7 @@ public class TurtleScreenHandler extends ScreenHandler {
 
     private final Inventory inventory;
     private final PropertyDelegate propertyDelegate;
+    private TurtleBlockEntity turtle;
 
     public TurtleScreenHandler(int syncId, PlayerInventory playerInventory) {
         this(syncId, playerInventory, new SimpleInventory(TOTAL_TURTLE_SLOTS), new ArrayPropertyDelegate(7));
@@ -33,6 +34,11 @@ public class TurtleScreenHandler extends ScreenHandler {
         checkSize(inventory, TOTAL_TURTLE_SLOTS);
         this.inventory = inventory;
         this.propertyDelegate = propertyDelegate;
+        if (inventory instanceof TurtleBlockEntity tbe) {
+            this.turtle = tbe;
+        } else if (inventory instanceof DelegatingInventory delegating) {
+            this.turtle = delegating.getDelegate();
+        }
         inventory.onOpen(playerInventory.player);
 
         // Slot 0: Fuel Slot
@@ -100,10 +106,29 @@ public class TurtleScreenHandler extends ScreenHandler {
         return this.propertyDelegate.get(6);
     }
 
+    public void setTurtle(TurtleBlockEntity newTurtle) {
+        this.turtle = newTurtle;
+        if (this.inventory instanceof DelegatingInventory delegating) {
+            delegating.setDelegate(newTurtle);
+        }
+        if (this.propertyDelegate instanceof DelegatingPropertyDelegate delegatingProps) {
+            delegatingProps.setDelegate(newTurtle.getPropertyDelegate());
+        }
+        this.sendContentUpdates();
+    }
+
+    public TurtleBlockEntity getTurtle() {
+        return this.turtle;
+    }
+
     @Override
     public boolean onButtonClick(PlayerEntity player, int id) {
-        if (this.inventory instanceof TurtleBlockEntity turtle) {
-            turtle.onButtonPressed(id);
+        if (this.turtle != null) {
+            this.turtle.onButtonPressed(id);
+            return true;
+        }
+        if (this.inventory instanceof TurtleBlockEntity tbe) {
+            tbe.onButtonPressed(id);
             return true;
         }
         return false;
@@ -111,7 +136,108 @@ public class TurtleScreenHandler extends ScreenHandler {
 
     @Override
     public boolean canUse(PlayerEntity player) {
+        if (this.turtle != null) {
+            if (player.getEntityWorld() != this.turtle.getWorld()) return false;
+            return player.squaredDistanceTo(this.turtle.getPos().toCenterPos()) <= 100.0;
+        }
         return this.inventory.canPlayerUse(player);
+    }
+
+    public static class DelegatingInventory implements Inventory {
+        private TurtleBlockEntity delegate;
+
+        public DelegatingInventory(TurtleBlockEntity delegate) {
+            this.delegate = delegate;
+        }
+
+        public void setDelegate(TurtleBlockEntity delegate) {
+            this.delegate = delegate;
+        }
+
+        public TurtleBlockEntity getDelegate() {
+            return delegate;
+        }
+
+        @Override
+        public int size() {
+            return delegate != null ? delegate.size() : TOTAL_TURTLE_SLOTS;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return delegate == null || delegate.isEmpty();
+        }
+
+        @Override
+        public ItemStack getStack(int slot) {
+            return delegate != null ? delegate.getStack(slot) : ItemStack.EMPTY;
+        }
+
+        @Override
+        public ItemStack removeStack(int slot, int amount) {
+            return delegate != null ? delegate.removeStack(slot, amount) : ItemStack.EMPTY;
+        }
+
+        @Override
+        public ItemStack removeStack(int slot) {
+            return delegate != null ? delegate.removeStack(slot) : ItemStack.EMPTY;
+        }
+
+        @Override
+        public void setStack(int slot, ItemStack stack) {
+            if (delegate != null) {
+                delegate.setStack(slot, stack);
+            }
+        }
+
+        @Override
+        public void markDirty() {
+            if (delegate != null) {
+                delegate.markDirty();
+            }
+        }
+
+        @Override
+        public boolean canPlayerUse(PlayerEntity player) {
+            if (delegate == null || delegate.isRemoved()) return false;
+            return player.squaredDistanceTo(delegate.getPos().toCenterPos()) <= 100.0;
+        }
+
+        @Override
+        public void clear() {
+            if (delegate != null) {
+                delegate.clear();
+            }
+        }
+    }
+
+    public static class DelegatingPropertyDelegate implements PropertyDelegate {
+        private PropertyDelegate delegate;
+
+        public DelegatingPropertyDelegate(PropertyDelegate delegate) {
+            this.delegate = delegate;
+        }
+
+        public void setDelegate(PropertyDelegate delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public int get(int index) {
+            return delegate != null ? delegate.get(index) : 0;
+        }
+
+        @Override
+        public void set(int index, int value) {
+            if (delegate != null) {
+                delegate.set(index, value);
+            }
+        }
+
+        @Override
+        public int size() {
+            return delegate != null ? delegate.size() : 7;
+        }
     }
 
     @Override

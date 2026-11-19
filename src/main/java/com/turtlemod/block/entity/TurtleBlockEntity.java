@@ -24,6 +24,7 @@ import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.screen.NamedScreenHandlerFactory;
 import net.minecraft.screen.PropertyDelegate;
 import net.minecraft.screen.ScreenHandler;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
@@ -498,6 +499,16 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         if (newBe instanceof TurtleBlockEntity targetTurtle) {
             targetTurtle.copyFrom(this);
             targetTurtle.isMoving = false;
+
+            // Retarget any players viewing this turtle's GUI to the moved turtle!
+            for (ServerPlayerEntity player : world.getPlayers()) {
+                if (player.currentScreenHandler instanceof TurtleScreenHandler handler) {
+                    if (handler.getTurtle() == this) {
+                        handler.setTurtle(targetTurtle);
+                    }
+                }
+            }
+
             targetTurtle.markDirty();
             return targetTurtle;
         }
@@ -505,9 +516,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     }
 
     public void copyFrom(TurtleBlockEntity source) {
-        for (int i = 0; i < TOTAL_SLOTS; i++) {
-            this.items.set(i, source.items.get(i).copy());
-        }
+        this.items = source.items;
         this.fuel = source.fuel;
         this.maxFuel = source.maxFuel;
         this.status = source.status;
@@ -858,13 +867,17 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
     @Override
     public Text getDisplayName() {
-        return Text.literal("Autonomous Turtle");
+        return Text.literal("Turtle");
     }
 
     @Nullable
     @Override
     public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player) {
-        return new TurtleScreenHandler(syncId, playerInventory, this, this.propertyDelegate);
+        TurtleScreenHandler.DelegatingInventory inv = new TurtleScreenHandler.DelegatingInventory(this);
+        TurtleScreenHandler.DelegatingPropertyDelegate props = new TurtleScreenHandler.DelegatingPropertyDelegate(this.propertyDelegate);
+        TurtleScreenHandler handler = new TurtleScreenHandler(syncId, playerInventory, inv, props);
+        handler.setTurtle(this);
+        return handler;
     }
 
     // --- DATA SERIALIZATION ---
