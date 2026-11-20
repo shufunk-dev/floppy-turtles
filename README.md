@@ -158,7 +158,7 @@ Clone the repository and build the jar using the Gradle wrapper:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/floppy-turtles.git
+git clone https://github.com/shufunk-dev/floppy-turtles.git
 cd floppy-turtles
 
 # Build the mod jar
