@@ -1,7 +1,7 @@
 package com.turtlemod.app;
 
-import net.minecraft.item.Item;
-import net.minecraft.item.Items;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 
 public enum AppType {
     NONE("none", "No Program Installed", "Insert a programmed floppy disk.", Items.AIR, 0),

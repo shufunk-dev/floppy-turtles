@@ -6,54 +6,54 @@ import com.turtlemod.app.TurtleStatus;
 import com.turtlemod.block.TurtleBlock;
 import com.turtlemod.item.FloppyDiskItem;
 import com.turtlemod.screen.TurtleScreenHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.CropBlock;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.mob.Monster;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventories;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.tag.BlockTags;
-import net.minecraft.screen.NamedScreenHandlerFactory;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.text.Text;
-import net.minecraft.util.ItemScatterer;
-import net.minecraft.util.collection.DefaultedList;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.NonNullList;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.Container;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.Containers;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CookingFuel;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CropBlock;
+import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.FarmlandBlock;
+import net.minecraft.world.level.block.FenceBlock;
+import net.minecraft.world.level.block.WallBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Queue;
-import java.util.Set;
-
-public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedScreenHandlerFactory {
+import java.util.*;
+public class TurtleBlockEntity extends BlockEntity implements Container, MenuProvider {
     public static final int TOTAL_SLOTS = 12;
     public static final int ACTION_INTERVAL = 15; // Ticks between actions (~0.75s)
 
-    private DefaultedList<ItemStack> items = DefaultedList.ofSize(TOTAL_SLOTS, ItemStack.EMPTY);
+    private NonNullList<ItemStack> items = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY);
 
     private int fuel = 0;
     private int maxFuel = 10000;
@@ -69,7 +69,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     private int farmMoveStep = 0;
     private boolean isMoving = false;
 
-    private final PropertyDelegate propertyDelegate = new PropertyDelegate() {
+    private final ContainerData propertyDelegate = new ContainerData() {
         @Override
         public int get(int index) {
             return switch (index) {
@@ -77,7 +77,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 case 1 -> maxFuel;
                 case 2 -> status.getId();
                 case 3 -> getAppType().ordinal();
-                case 4 -> getFacing().getIndex();
+                case 4 -> getFacing().get3DDataValue();
                 case 5 -> progress;
                 case 6 -> configDistance;
                 default -> 0;
@@ -95,7 +95,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         }
 
         @Override
-        public int size() {
+        public int getCount() {
             return 7;
         }
     };
@@ -109,15 +109,15 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     }
 
     public Direction getFacing() {
-        if (this.getCachedState().contains(TurtleBlock.FACING)) {
-            return this.getCachedState().get(TurtleBlock.FACING);
+        if (this.getBlockState().hasProperty(TurtleBlock.FACING)) {
+            return this.getBlockState().getValue(TurtleBlock.FACING);
         }
         return Direction.NORTH;
     }
 
     public void setFacing(Direction newFacing) {
-        if (world != null && this.getCachedState().contains(TurtleBlock.FACING)) {
-            world.setBlockState(pos, this.getCachedState().with(TurtleBlock.FACING, newFacing), Block.NOTIFY_ALL);
+        if (this.level != null && this.getBlockState().hasProperty(TurtleBlock.FACING)) {
+            this.level.setBlock(this.worldPosition, this.getBlockState().setValue(TurtleBlock.FACING, newFacing), Block.UPDATE_ALL);
         }
     }
 
@@ -165,39 +165,39 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
     public static boolean isPickaxe(ItemStack stack) {
         if (stack.isEmpty()) return false;
-        return stack.isOf(Items.WOODEN_PICKAXE) || stack.isOf(Items.STONE_PICKAXE) ||
-               stack.isOf(Items.IRON_PICKAXE) || stack.isOf(Items.GOLDEN_PICKAXE) ||
-               stack.isOf(Items.DIAMOND_PICKAXE) || stack.isOf(Items.NETHERITE_PICKAXE);
+        return stack.is(Items.WOODEN_PICKAXE) || stack.is(Items.STONE_PICKAXE) ||
+               stack.is(Items.IRON_PICKAXE) || stack.is(Items.GOLDEN_PICKAXE) ||
+               stack.is(Items.DIAMOND_PICKAXE) || stack.is(Items.NETHERITE_PICKAXE);
     }
 
     public static boolean isAxe(ItemStack stack) {
         if (stack.isEmpty()) return false;
-        return stack.isOf(Items.WOODEN_AXE) || stack.isOf(Items.STONE_AXE) ||
-               stack.isOf(Items.IRON_AXE) || stack.isOf(Items.GOLDEN_AXE) ||
-               stack.isOf(Items.DIAMOND_AXE) || stack.isOf(Items.NETHERITE_AXE);
+        return stack.is(Items.WOODEN_AXE) || stack.is(Items.STONE_AXE) ||
+               stack.is(Items.IRON_AXE) || stack.is(Items.GOLDEN_AXE) ||
+               stack.is(Items.DIAMOND_AXE) || stack.is(Items.NETHERITE_AXE);
     }
 
     public static boolean isHoe(ItemStack stack) {
         if (stack.isEmpty()) return false;
-        return stack.isOf(Items.WOODEN_HOE) || stack.isOf(Items.STONE_HOE) ||
-               stack.isOf(Items.IRON_HOE) || stack.isOf(Items.GOLDEN_HOE) ||
-               stack.isOf(Items.DIAMOND_HOE) || stack.isOf(Items.NETHERITE_HOE);
+        return stack.is(Items.WOODEN_HOE) || stack.is(Items.STONE_HOE) ||
+               stack.is(Items.IRON_HOE) || stack.is(Items.GOLDEN_HOE) ||
+               stack.is(Items.DIAMOND_HOE) || stack.is(Items.NETHERITE_HOE);
     }
 
     public static boolean isSword(ItemStack stack) {
         if (stack.isEmpty()) return false;
-        return stack.isOf(Items.WOODEN_SWORD) || stack.isOf(Items.STONE_SWORD) ||
-               stack.isOf(Items.IRON_SWORD) || stack.isOf(Items.GOLDEN_SWORD) ||
-               stack.isOf(Items.DIAMOND_SWORD) || stack.isOf(Items.NETHERITE_SWORD);
+        return stack.is(Items.WOODEN_SWORD) || stack.is(Items.STONE_SWORD) ||
+               stack.is(Items.IRON_SWORD) || stack.is(Items.GOLDEN_SWORD) ||
+               stack.is(Items.DIAMOND_SWORD) || stack.is(Items.NETHERITE_SWORD);
     }
 
     private static boolean isToolItem(ItemStack s) {
         return isPickaxe(s) || isAxe(s) || isHoe(s) || isSword(s) ||
-               s.isOf(Items.WOODEN_SHOVEL) || s.isOf(Items.STONE_SHOVEL) ||
-               s.isOf(Items.IRON_SHOVEL) || s.isOf(Items.DIAMOND_SHOVEL) || s.isOf(Items.NETHERITE_SHOVEL);
+               s.is(Items.WOODEN_SHOVEL) || s.is(Items.STONE_SHOVEL) ||
+               s.is(Items.IRON_SHOVEL) || s.is(Items.DIAMOND_SHOVEL) || s.is(Items.NETHERITE_SHOVEL);
     }
 
-    public PropertyDelegate getPropertyDelegate() {
+    public ContainerData getPropertyDelegate() {
         return propertyDelegate;
     }
 
@@ -207,10 +207,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 AppType app = getAppType();
                 if (app == AppType.NONE) {
                     this.status = TurtleStatus.IDLE;
-                    if (this.world != null) {
-                        this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BASS.value(), SoundCategory.BLOCKS, 1.0f, 0.5f);
+                    if (this.level != null) {
+                        this.level.playSound(null, this.worldPosition, SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.BLOCKS, 1.0f, 0.5f);
                     }
-                    markDirty();
+                    setChanged();
                     return;
                 }
 
@@ -220,20 +220,20 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 }
                 if (this.fuel <= 0) {
                     this.status = TurtleStatus.OUT_OF_FUEL;
-                    if (this.world != null) {
-                        this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BASS.value(), SoundCategory.BLOCKS, 1.0f, 0.5f);
+                    if (this.level != null) {
+                        this.level.playSound(null, this.worldPosition, SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.BLOCKS, 1.0f, 0.5f);
                     }
-                    markDirty();
+                    setChanged();
                     return;
                 }
 
                 // Check required tool
                 if (!hasRequiredTool(app)) {
                     this.status = TurtleStatus.NO_TOOL;
-                    if (this.world != null) {
-                        this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BASS.value(), SoundCategory.BLOCKS, 1.0f, 0.5f);
+                    if (this.level != null) {
+                        this.level.playSound(null, this.worldPosition, SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.BLOCKS, 1.0f, 0.5f);
                     }
-                    markDirty();
+                    setChanged();
                     return;
                 }
 
@@ -250,17 +250,17 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
                 this.status = TurtleStatus.RUNNING;
                 this.actionCooldown = 5;
-                if (this.world != null) {
-                    this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), SoundCategory.BLOCKS, 1.0f, 1.0f);
+                if (this.level != null) {
+                    this.level.playSound(null, this.worldPosition, SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.BLOCKS, 1.0f, 1.0f);
                 }
-                markDirty();
+                setChanged();
             }
             case 1 -> { // STOP / PAUSE
                 this.status = TurtleStatus.PAUSED;
-                if (this.world != null) {
-                    this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BASS.value(), SoundCategory.BLOCKS, 1.0f, 1.0f);
+                if (this.level != null) {
+                    this.level.playSound(null, this.worldPosition, SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.BLOCKS, 1.0f, 1.0f);
                 }
-                markDirty();
+                setChanged();
             }
             case 2 -> { // PARAM -
                 AppType app = getAppType();
@@ -277,7 +277,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 } else {
                     this.configDistance = Math.max(4, this.configDistance - 4);
                 }
-                markDirty();
+                setChanged();
             }
             case 3 -> { // PARAM +
                 AppType app = getAppType();
@@ -294,7 +294,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 } else {
                     this.configDistance = Math.min(128, this.configDistance + 4);
                 }
-                markDirty();
+                setChanged();
             }
             case 4 -> { // RESET
                 this.stepsMoved = 0;
@@ -305,20 +305,20 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 this.farmRow = -1;
                 this.farmMoveStep = 0;
                 this.status = TurtleStatus.IDLE;
-                markDirty();
+                setChanged();
             }
         }
     }
 
-    public static void tick(World world, BlockPos pos, BlockState state, TurtleBlockEntity entity) {
-        if (world.isClient() || entity.isMoving) return;
+    public static void tick(Level world, BlockPos pos, BlockState state, TurtleBlockEntity entity) {
+        if (world.isClientSide() || entity.isMoving) return;
 
         AppType currentApp = entity.getAppType();
 
         // If program disk was removed while running, halt to idle
         if (currentApp == AppType.NONE && entity.status == TurtleStatus.RUNNING) {
             entity.status = TurtleStatus.IDLE;
-            entity.markDirty();
+            entity.setChanged();
             return;
         }
 
@@ -335,14 +335,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         // Check fuel depletion
         if (entity.fuel <= 0) {
             entity.status = TurtleStatus.OUT_OF_FUEL;
-            entity.markDirty();
+            entity.setChanged();
             return;
         }
 
         // Check required tool while running
         if (!entity.hasRequiredTool(currentApp)) {
             entity.status = TurtleStatus.NO_TOOL;
-            entity.markDirty();
+            entity.setChanged();
             return;
         }
 
@@ -352,10 +352,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         }
 
         entity.actionCooldown = ACTION_INTERVAL;
-        entity.executeCurrentApp((ServerWorld) world);
+        entity.executeCurrentApp((ServerLevel) world);
     }
 
-    private void executeCurrentApp(ServerWorld serverWorld) {
+    private void executeCurrentApp(ServerLevel serverWorld) {
         AppType app = getAppType();
         switch (app) {
             case MINER -> executeMiner(serverWorld);
@@ -367,30 +367,27 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             case SENTRY -> executeSentry(serverWorld);
             default -> {
                 this.status = TurtleStatus.IDLE;
-                markDirty();
+                setChanged();
             }
         }
     }
 
     public int getFuelGain(ItemStack stack) {
         if (stack.isEmpty()) return 0;
-        if (stack.isOf(Items.COAL) || stack.isOf(Items.CHARCOAL)) return 80;
-        if (stack.isOf(Items.COAL_BLOCK)) return 800;
-        if (stack.isOf(Items.BLAZE_ROD)) return 120;
-        if (stack.isOf(Items.LAVA_BUCKET)) return 1000;
-        if (stack.isOf(Items.OAK_PLANKS) || stack.isOf(Items.OAK_LOG) || stack.isOf(Items.STICK)) return 15;
+        if (stack.is(Items.COAL) || stack.is(Items.CHARCOAL)) return 80;
+        if (stack.is(Items.COAL_BLOCK)) return 800;
+        if (stack.is(Items.BLAZE_ROD)) return 120;
+        if (stack.is(Items.LAVA_BUCKET)) return 1000;
+        if (stack.is(Items.OAK_PLANKS) || stack.is(Items.OAK_LOG) || stack.is(Items.STICK)) return 15;
 
-        if (this.world != null) {
-            try {
-                int ticks = this.world.getFuelRegistry().getFuelTicks(stack);
-                if (ticks > 0) return Math.max(1, ticks / 20);
-            } catch (Exception ignored) {}
+        if (stack.has(DataComponents.COOKING_FUEL)) {
+            return 80;
         }
         return 0;
     }
 
     public void tryRefuel() {
-        if (this.world == null) return;
+        if (this.level == null) return;
 
         // Check dedicated fuel slot (Slot 0) first
         ItemStack fuelStack = this.items.get(TurtleScreenHandler.FUEL_SLOT);
@@ -413,39 +410,39 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
         if (gain > 0 && this.fuel + gain <= this.maxFuel) {
             this.fuel += gain;
-            ItemStack remainder = fuelStack.isOf(Items.LAVA_BUCKET) ? new ItemStack(Items.BUCKET) : fuelStack.getRecipeRemainder();
-            fuelStack.decrement(1);
+            ItemStack remainder = fuelStack.is(Items.LAVA_BUCKET) ? new ItemStack(Items.BUCKET) : ItemStack.EMPTY;
+            fuelStack.shrink(1);
             if (fuelStack.isEmpty() && !remainder.isEmpty()) {
                 this.items.set(slotUsed, remainder);
             }
             if (this.status == TurtleStatus.OUT_OF_FUEL) {
                 this.status = TurtleStatus.RUNNING;
             }
-            markDirty();
+            setChanged();
         }
     }
 
     private boolean consumeFuel(int amount) {
         if (this.fuel >= amount) {
             this.fuel -= amount;
-            markDirty();
+            setChanged();
             return true;
         }
         tryRefuel();
         if (this.fuel >= amount) {
             this.fuel -= amount;
-            markDirty();
+            setChanged();
             return true;
         }
         this.status = TurtleStatus.OUT_OF_FUEL;
-        markDirty();
+        setChanged();
         return false;
     }
 
     private void damageTool() {
         ItemStack tool = getToolStack();
-        if (!tool.isEmpty() && this.world instanceof ServerWorld sw) {
-            tool.damage(1, sw, null, item -> {});
+        if (!tool.isEmpty() && this.level instanceof ServerLevel sw) {
+            tool.hurtAndBreak(1, sw, null, item -> {});
             if (tool.isEmpty()) {
                 for (int i = 0; i < TOTAL_SLOTS; i++) {
                     if (this.items.get(i) == tool) {
@@ -454,7 +451,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                     }
                 }
             }
-            markDirty();
+            setChanged();
         }
     }
 
@@ -462,14 +459,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         if (stack.isEmpty()) return ItemStack.EMPTY;
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
             ItemStack slotStack = this.items.get(i);
-            if (ItemStack.areItemsAndComponentsEqual(slotStack, stack)) {
-                int space = slotStack.getMaxCount() - slotStack.getCount();
+            if (ItemStack.isSameItemSameComponents(slotStack, stack)) {
+                int space = slotStack.getMaxStackSize() - slotStack.getCount();
                 int toAdd = Math.min(space, stack.getCount());
                 if (toAdd > 0) {
-                    slotStack.increment(toAdd);
-                    stack.decrement(toAdd);
+                    slotStack.grow(toAdd);
+                    stack.shrink(toAdd);
                     if (stack.isEmpty()) {
-                        markDirty();
+                        setChanged();
                         return ItemStack.EMPTY;
                     }
                 }
@@ -479,71 +476,71 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             ItemStack slotStack = this.items.get(i);
             if (slotStack.isEmpty()) {
                 this.items.set(i, stack.copy());
-                markDirty();
+                setChanged();
                 return ItemStack.EMPTY;
             }
         }
         return stack;
     }
 
-    public boolean dig(ServerWorld world, BlockPos targetPos) {
+    public boolean dig(ServerLevel world, BlockPos targetPos) {
         BlockState targetState = world.getBlockState(targetPos);
-        if (targetState.isAir() || targetState.isLiquid()) return true;
-        if (targetState.getHardness(world, targetPos) < 0) {
+        if (targetState.isAir() || !targetState.getFluidState().isEmpty()) return true;
+        if (targetState.getDestroySpeed(world, targetPos) < 0) {
             return false; // Bedrock or unbreakable
         }
 
         // If block requires tool and tool is missing, notify status
         ItemStack tool = getToolStack();
-        if (targetState.isToolRequired() && tool.isEmpty()) {
+        if (targetState.requiresCorrectToolForDrops() && tool.isEmpty()) {
             this.status = TurtleStatus.NO_TOOL;
-            markDirty();
+            setChanged();
             return false;
         }
 
         BlockEntity targetBe = world.getBlockEntity(targetPos);
-        List<ItemStack> drops = Block.getDroppedStacks(targetState, world, targetPos, targetBe, null, tool);
+        List<ItemStack> drops = Block.getDrops(targetState, world, targetPos, targetBe, null, tool);
 
-        world.breakBlock(targetPos, false);
+        world.destroyBlock(targetPos, false);
         damageTool();
 
         for (ItemStack drop : drops) {
             ItemStack leftover = insertItem(drop);
             if (!leftover.isEmpty()) {
-                ItemScatterer.spawn(world, pos.getX(), pos.getY(), pos.getZ(), leftover);
+                Containers.dropItemStack(world, this.worldPosition.getX(), this.worldPosition.getY(), this.worldPosition.getZ(), leftover);
             }
         }
         return true;
     }
 
-    public TurtleBlockEntity move(ServerWorld world, Direction dir) {
+    public TurtleBlockEntity move(ServerLevel world, Direction dir) {
         if (!consumeFuel(1)) return null;
 
-        BlockPos targetPos = this.pos.offset(dir);
-        if (!world.isInBuildLimit(targetPos)) {
+        BlockPos targetPos = this.worldPosition.relative(dir);
+        if (world.isOutsideBuildHeight(targetPos)) {
             return null;
         }
 
         BlockState targetState = world.getBlockState(targetPos);
         // Break non-solid obstacles (flowers, tall grass, ferns, saplings) so turtle can enter
-        if (!targetState.isAir() && !targetState.isLiquid() && !targetState.isReplaceable()) {
+        if (!targetState.isAir() && targetState.getFluidState().isEmpty() && !targetState.canBeReplaced()) {
             if (targetState.getCollisionShape(world, targetPos).isEmpty()) {
                 dig(world, targetPos);
                 targetState = world.getBlockState(targetPos);
             }
         }
 
-        if (!targetState.isAir() && !targetState.isLiquid() && !targetState.isReplaceable()) {
+        if (!targetState.isAir() && targetState.getFluidState().isEmpty() && !targetState.canBeReplaced()) {
             return null;
         }
 
         // Relocate turtle block and data
         this.isMoving = true;
-        BlockState currentState = this.getCachedState();
+        BlockState currentState = this.getBlockState();
 
-        world.removeBlockEntity(this.pos);
-        world.setBlockState(this.pos, Blocks.AIR.getDefaultState(), Block.NOTIFY_ALL);
-        world.setBlockState(targetPos, currentState, Block.NOTIFY_ALL);
+        world.removeBlockEntity(this.worldPosition);
+        world.setBlock(this.worldPosition, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+        world.setBlock(targetPos, currentState, Block.UPDATE_ALL);
 
         BlockEntity newBe = world.getBlockEntity(targetPos);
         if (newBe instanceof TurtleBlockEntity targetTurtle) {
@@ -551,15 +548,15 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             targetTurtle.isMoving = false;
 
             // Retarget any players viewing this turtle's GUI to the moved turtle!
-            for (ServerPlayerEntity player : world.getPlayers()) {
-                if (player.currentScreenHandler instanceof TurtleScreenHandler handler) {
+            for (ServerPlayer player : world.players()) {
+                if (player.containerMenu instanceof TurtleScreenHandler handler) {
                     if (handler.getTurtle() == this) {
                         handler.setTurtle(targetTurtle);
                     }
                 }
             }
 
-            targetTurtle.markDirty();
+            targetTurtle.setChanged();
             return targetTurtle;
         }
         return null;
@@ -583,35 +580,35 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
     // --- APP IMPLEMENTATIONS ---
 
-    private void executeMiner(ServerWorld world) {
+    private void executeMiner(ServerLevel world) {
         Direction facing = getFacing();
         if (this.stepsMoved >= this.configDistance) {
             this.status = TurtleStatus.COMPLETED;
-            markDirty();
+            setChanged();
             return;
         }
 
-        Direction left = facing.rotateYCounterclockwise();
-        Direction right = facing.rotateYClockwise();
-        BlockPos sliceCenter = this.pos.offset(facing);
+        Direction left = facing.getCounterClockWise();
+        Direction right = facing.getClockWise();
+        BlockPos sliceCenter = this.worldPosition.relative(facing);
 
         // Mine 3x3 slice in front of the turtle:
         // dy: 0 (foot), 1 (eye), 2 (ceiling)
         // dxz: left (-1), center (0), right (+1)
         for (int dy = 0; dy <= 2; dy++) {
             for (int offset = -1; offset <= 1; offset++) {
-                BlockPos target = sliceCenter.up(dy);
-                if (offset == -1) target = target.offset(left);
-                else if (offset == 1) target = target.offset(right);
+                BlockPos target = sliceCenter.above(dy);
+                if (offset == -1) target = target.relative(left);
+                else if (offset == 1) target = target.relative(right);
 
                 BlockState state = world.getBlockState(target);
-                if (!state.isAir() && !state.isLiquid()) {
+                if (!state.isAir() && state.getFluidState().isEmpty()) {
                     if (!dig(world, target)) {
                         // Blocked by bedrock or missing tool
                         if (this.status != TurtleStatus.NO_TOOL) {
                             this.status = TurtleStatus.BLOCKED;
                         }
-                        markDirty();
+                        setChanged();
                         return;
                     }
                 }
@@ -621,13 +618,13 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         // Clear any falling sand/gravel that dropped into the center movement path
         for (int i = 0; i < 5; i++) {
             BlockState centerState = world.getBlockState(sliceCenter);
-            if (centerState.isAir() || centerState.isLiquid()) break;
+            if (centerState.isAir() || !centerState.getFluidState().isEmpty()) break;
             if (!dig(world, sliceCenter)) break;
         }
         for (int i = 0; i < 5; i++) {
-            BlockState aboveCenterState = world.getBlockState(sliceCenter.up());
-            if (aboveCenterState.isAir() || aboveCenterState.isLiquid()) break;
-            if (!dig(world, sliceCenter.up())) break;
+            BlockState aboveCenterState = world.getBlockState(sliceCenter.above());
+            if (aboveCenterState.isAir() || !aboveCenterState.getFluidState().isEmpty()) break;
+            if (!dig(world, sliceCenter.above())) break;
         }
 
         TurtleBlockEntity movedTurtle = move(world, facing);
@@ -643,13 +640,13 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
                 movedTurtle.status = TurtleStatus.COMPLETED;
             }
-            movedTurtle.markDirty();
+            movedTurtle.setChanged();
         }
     }
 
-    private boolean placeTorch(ServerWorld world) {
-        BlockPos backPos = this.pos.offset(getFacing().getOpposite());
-        BlockState floorState = world.getBlockState(backPos.down());
+    private boolean placeTorch(ServerLevel world) {
+        BlockPos backPos = this.worldPosition.relative(getFacing().getOpposite());
+        BlockState floorState = world.getBlockState(backPos.below());
 
         if (!world.getBlockState(backPos).isAir() || !floorState.isSolid()) {
             return false;
@@ -658,48 +655,48 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         // 1. Try to use torches from storage (Slots 3-11)
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
             ItemStack stack = this.items.get(i);
-            if (!stack.isEmpty() && (stack.isOf(Items.TORCH) || stack.isOf(Items.SOUL_TORCH))) {
-                BlockState torchState = stack.isOf(Items.SOUL_TORCH)
-                        ? Blocks.SOUL_TORCH.getDefaultState()
-                        : Blocks.TORCH.getDefaultState();
-                world.setBlockState(backPos, torchState, Block.NOTIFY_ALL);
-                stack.decrement(1);
+            if (!stack.isEmpty() && (stack.is(Items.TORCH) || stack.is(Items.SOUL_TORCH))) {
+                BlockState torchState = stack.is(Items.SOUL_TORCH)
+                        ? Blocks.SOUL_TORCH.defaultBlockState()
+                        : Blocks.TORCH.defaultBlockState();
+                world.setBlock(backPos, torchState, Block.UPDATE_ALL);
+                stack.shrink(1);
                 if (stack.isEmpty()) {
                     this.items.set(i, ItemStack.EMPTY);
                 }
-                world.playSound(null, backPos, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f);
-                markDirty();
+                world.playSound(null, backPos, SoundEvents.WOOD_PLACE, SoundSource.BLOCKS, 1.0f, 1.0f);
+                setChanged();
                 return true;
             }
         }
 
         // 2. Fallback: synthesize torch from fuel reserve
         if (this.fuel >= 1) {
-            world.setBlockState(backPos, Blocks.TORCH.getDefaultState(), Block.NOTIFY_ALL);
+            world.setBlock(backPos, Blocks.TORCH.defaultBlockState(), Block.UPDATE_ALL);
             consumeFuel(1);
-            world.playSound(null, backPos, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f);
-            markDirty();
+            world.playSound(null, backPos, SoundEvents.WOOD_PLACE, SoundSource.BLOCKS, 1.0f, 1.0f);
+            setChanged();
             return true;
         }
 
         return false;
     }
 
-    private void executeQuarry(ServerWorld world) {
+    private void executeQuarry(ServerLevel world) {
         if (this.quarryLayer >= this.configDistance) {
             this.status = TurtleStatus.COMPLETED;
-            markDirty();
+            setChanged();
             return;
         }
 
         int dx = (this.quarryIndex % 3) - 1;
         int dz = (this.quarryIndex / 3) - 1;
-        BlockPos targetPos = this.pos.add(dx, -1, dz);
+        BlockPos targetPos = this.worldPosition.offset(dx, -1, dz);
 
         if (!world.getBlockState(targetPos).isAir()) {
             if (!dig(world, targetPos)) {
                 this.status = TurtleStatus.COMPLETED; // Reached bedrock
-                markDirty();
+                setChanged();
                 return;
             }
         }
@@ -713,22 +710,22 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             if (this.quarryLayer < this.configDistance) {
                 TurtleBlockEntity movedTurtle = move(world, Direction.DOWN);
                 if (movedTurtle != null) {
-                    movedTurtle.markDirty();
+                    movedTurtle.setChanged();
                 }
             } else {
                 this.status = TurtleStatus.COMPLETED;
             }
         }
-        markDirty();
+        setChanged();
     }
 
-    private void executeBuilder(ServerWorld world) {
+    private void executeBuilder(ServerLevel world) {
         Direction facing = getFacing();
-        Direction left = facing.rotateYCounterclockwise();
+        Direction left = facing.getCounterClockWise();
 
         if (this.stepsMoved >= 64) {
             this.status = TurtleStatus.COMPLETED;
-            markDirty();
+            setChanged();
             return;
         }
 
@@ -743,14 +740,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
         boolean neededPaving = false;
         for (int offset : floorOffsets) {
-            BlockPos floorPos = this.pos.offset(facing).offset(left, offset).down();
+            BlockPos floorPos = this.worldPosition.relative(facing).relative(left, offset).below();
             BlockState floorState = world.getBlockState(floorPos);
-            if (floorState.isAir() || floorState.isLiquid() || floorState.isReplaceable()) {
+            if (floorState.isAir() || !floorState.getFluidState().isEmpty() || floorState.canBeReplaced()) {
                 neededPaving = true;
                 boolean placed = placeSolidBlock(world, floorPos);
                 if (!placed) {
                     this.status = TurtleStatus.NO_TOOL; // Shows "Need Blocks!"
-                    markDirty();
+                    setChanged();
                     return;
                 }
             }
@@ -759,9 +756,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         // 2. If 5-Wide mode, place guard rails on the outer edges (-2 and +2)
         if (width == 5) {
             for (int offset : new int[]{-2, 2}) {
-                BlockPos railPos = this.pos.offset(facing).offset(left, offset);
+                BlockPos railPos = this.worldPosition.relative(facing).relative(left, offset);
                 BlockState railState = world.getBlockState(railPos);
-                if (railState.isAir() || railState.isLiquid() || railState.isReplaceable()) {
+                if (railState.isAir() || !railState.getFluidState().isEmpty() || railState.canBeReplaced()) {
                     placeRailingBlock(world, railPos);
                 }
             }
@@ -774,12 +771,12 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         };
 
         for (int offset : walkOffsets) {
-            BlockPos walkFoot = this.pos.offset(facing).offset(left, offset);
-            BlockPos walkHead = walkFoot.up();
-            if (!world.getBlockState(walkFoot).isAir() && !world.getBlockState(walkFoot).isLiquid()) {
+            BlockPos walkFoot = this.worldPosition.relative(facing).relative(left, offset);
+            BlockPos walkHead = walkFoot.above();
+            if (!world.getBlockState(walkFoot).isAir() && world.getBlockState(walkFoot).getFluidState().isEmpty()) {
                 dig(world, walkFoot);
             }
-            if (!world.getBlockState(walkHead).isAir() && !world.getBlockState(walkHead).isLiquid()) {
+            if (!world.getBlockState(walkHead).isAir() && world.getBlockState(walkHead).getFluidState().isEmpty()) {
                 dig(world, walkHead);
             }
         }
@@ -794,9 +791,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             if (movedTurtle.stepsMoved >= 3 && !neededPaving) {
                 boolean allAheadSolid = true;
                 for (int offset : floorOffsets) {
-                    BlockPos aheadFloor = movedTurtle.pos.offset(facing).offset(left, offset).down();
+                    BlockPos aheadFloor = movedTurtle.worldPosition.relative(facing).relative(left, offset).below();
                     BlockState s = world.getBlockState(aheadFloor);
-                    if (s.isAir() || s.isLiquid() || s.isReplaceable()) {
+                    if (s.isAir() || !s.getFluidState().isEmpty() || s.canBeReplaced()) {
                         allAheadSolid = false;
                         break;
                     }
@@ -804,8 +801,8 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 if (allAheadSolid) {
                     movedTurtle.status = TurtleStatus.COMPLETED;
                     movedTurtle.progress = 100;
-                    world.playSound(null, movedTurtle.pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.BLOCKS, 1.0f, 1.0f);
-                    movedTurtle.markDirty();
+                    world.playSound(null, movedTurtle.worldPosition, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.BLOCKS, 1.0f, 1.0f);
+                    movedTurtle.setChanged();
                     return;
                 }
             }
@@ -813,32 +810,32 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             if (movedTurtle.stepsMoved >= 64) {
                 movedTurtle.status = TurtleStatus.COMPLETED;
                 movedTurtle.progress = 100;
-                world.playSound(null, movedTurtle.pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                world.playSound(null, movedTurtle.worldPosition, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.BLOCKS, 1.0f, 1.0f);
             }
-            movedTurtle.markDirty();
+            movedTurtle.setChanged();
         } else {
             this.status = TurtleStatus.BLOCKED;
-            markDirty();
+            setChanged();
         }
     }
 
-    private boolean placeSolidBlock(ServerWorld world, BlockPos targetPos) {
+    private boolean placeSolidBlock(ServerLevel world, BlockPos targetPos) {
         // First pass: try standard solid blocks (excluding fences and walls)
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
             ItemStack stack = this.items.get(i);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
                 Block block = blockItem.getBlock();
-                BlockState state = block.getDefaultState();
-                if (state.isIn(BlockTags.FENCES) || state.isIn(BlockTags.WALLS)) {
+                BlockState state = block.defaultBlockState();
+                if (state.is(BlockTags.FENCES) || state.is(BlockTags.WALLS)) {
                     continue;
                 }
                 if (state.isSolid()) {
-                    world.setBlockState(targetPos, state, Block.NOTIFY_ALL);
-                    stack.decrement(1);
+                    world.setBlock(targetPos, state, Block.UPDATE_ALL);
+                    stack.shrink(1);
                     if (stack.isEmpty()) {
                         this.items.set(i, ItemStack.EMPTY);
                     }
-                    markDirty();
+                    setChanged();
                     return true;
                 }
             }
@@ -848,14 +845,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             ItemStack stack = this.items.get(i);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
                 Block block = blockItem.getBlock();
-                BlockState state = block.getDefaultState();
+                BlockState state = block.defaultBlockState();
                 if (state.isSolid()) {
-                    world.setBlockState(targetPos, state, Block.NOTIFY_ALL);
-                    stack.decrement(1);
+                    world.setBlock(targetPos, state, Block.UPDATE_ALL);
+                    stack.shrink(1);
                     if (stack.isEmpty()) {
                         this.items.set(i, ItemStack.EMPTY);
                     }
-                    markDirty();
+                    setChanged();
                     return true;
                 }
             }
@@ -863,20 +860,20 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         return false;
     }
 
-    private boolean placeRailingBlock(ServerWorld world, BlockPos targetPos) {
+    private boolean placeRailingBlock(ServerLevel world, BlockPos targetPos) {
         // First priority: any fence or wall
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
             ItemStack stack = this.items.get(i);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
                 Block block = blockItem.getBlock();
-                BlockState state = block.getDefaultState();
-                if (state.isIn(BlockTags.FENCES) || state.isIn(BlockTags.WALLS)) {
-                    world.setBlockState(targetPos, state, Block.NOTIFY_ALL);
-                    stack.decrement(1);
+                BlockState state = block.defaultBlockState();
+                if (state.is(BlockTags.FENCES) || state.is(BlockTags.WALLS)) {
+                    world.setBlock(targetPos, state, Block.UPDATE_ALL);
+                    stack.shrink(1);
                     if (stack.isEmpty()) {
                         this.items.set(i, ItemStack.EMPTY);
                     }
-                    markDirty();
+                    setChanged();
                     return true;
                 }
             }
@@ -886,14 +883,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             ItemStack stack = this.items.get(i);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
                 Block block = blockItem.getBlock();
-                BlockState state = block.getDefaultState();
+                BlockState state = block.defaultBlockState();
                 if (state.isSolid()) {
-                    world.setBlockState(targetPos, state, Block.NOTIFY_ALL);
-                    stack.decrement(1);
+                    world.setBlock(targetPos, state, Block.UPDATE_ALL);
+                    stack.shrink(1);
                     if (stack.isEmpty()) {
                         this.items.set(i, ItemStack.EMPTY);
                     }
-                    markDirty();
+                    setChanged();
                     return true;
                 }
             }
@@ -901,13 +898,13 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         return false;
     }
 
-    private void executeLumberjack(ServerWorld world) {
+    private void executeLumberjack(ServerLevel world) {
         Direction facing = getFacing();
-        Direction left = facing.rotateYCounterclockwise();
+        Direction left = facing.getCounterClockWise();
 
         if (this.stepsMoved >= this.configDistance) {
             this.status = TurtleStatus.COMPLETED;
-            markDirty();
+            setChanged();
             return;
         }
 
@@ -919,10 +916,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         for (int fwd = 0; fwd <= 3; fwd++) {
             for (int side = -2; side <= 2; side++) {
                 for (int dy = -1; dy <= 3; dy++) {
-                    BlockPos target = this.pos.offset(facing, fwd).offset(left, side).up(dy);
+                    BlockPos target = this.worldPosition.relative(facing, fwd).relative(left, side).above(dy);
                     BlockState state = world.getBlockState(target);
-                    if (state.isIn(BlockTags.LOGS)) {
-                        double d = this.pos.getSquaredDistance(target);
+                    if (state.is(BlockTags.LOGS)) {
+                        double d = this.worldPosition.distSqr(target);
                         if (d < minDistance) {
                             minDistance = d;
                             closestTrunk = target;
@@ -934,22 +931,22 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
         if (closestTrunk != null) {
             fellTree(world, closestTrunk);
-            markDirty();
+            setChanged();
             return; // Tree felled; next tick will check for any other nearby trees before moving
         }
 
         // 2. Clear leaves and non-solid foliage in path and above turtle head
-        BlockPos frontPos = this.pos.offset(facing);
-        clearFoliage(world, this.pos.up());
+        BlockPos frontPos = this.worldPosition.relative(facing);
+        clearFoliage(world, this.worldPosition.above());
         clearFoliage(world, frontPos);
-        clearFoliage(world, frontPos.up());
+        clearFoliage(world, frontPos.above());
 
         // 3. Move forward along the path (with natural terrain hill climbing)
         TurtleBlockEntity movedTurtle = move(world, facing);
         if (movedTurtle == null) {
             // Check if there is a 1-block rise we can step up onto
-            BlockPos upPos = this.pos.up();
-            BlockPos upTarget = frontPos.up();
+            BlockPos upPos = this.worldPosition.above();
+            BlockPos upTarget = frontPos.above();
             clearFoliage(world, upPos);
             clearFoliage(world, upTarget);
 
@@ -966,7 +963,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
         // 4. If moved forward and there is a 1-block drop, step down onto the terrain
         if (movedTurtle != null) {
-            BlockPos below = movedTurtle.pos.down();
+            BlockPos below = movedTurtle.worldPosition.below();
             if (isPassable(world, below)) {
                 TurtleBlockEntity downTurtle = movedTurtle.move(world, Direction.DOWN);
                 if (downTurtle != null) {
@@ -979,27 +976,27 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
                 movedTurtle.status = TurtleStatus.COMPLETED;
             }
-            movedTurtle.markDirty();
+            movedTurtle.setChanged();
         } else {
             this.status = TurtleStatus.BLOCKED;
-            markDirty();
+            setChanged();
         }
     }
 
-    private boolean isPassable(ServerWorld world, BlockPos pos) {
+    private boolean isPassable(ServerLevel world, BlockPos pos) {
         BlockState state = world.getBlockState(pos);
-        if (state.isAir() || state.isLiquid() || state.isReplaceable()) return true;
+        if (state.isAir() || !state.getFluidState().isEmpty() || state.canBeReplaced()) return true;
         return state.getCollisionShape(world, pos).isEmpty();
     }
 
-    private void clearFoliage(ServerWorld world, BlockPos pos) {
+    private void clearFoliage(ServerLevel world, BlockPos pos) {
         BlockState state = world.getBlockState(pos);
-        if (state.isIn(BlockTags.LEAVES) || (!state.isAir() && state.getCollisionShape(world, pos).isEmpty())) {
+        if (state.is(BlockTags.LEAVES) || (!state.isAir() && state.getCollisionShape(world, pos).isEmpty())) {
             dig(world, pos);
         }
     }
 
-    private void fellTree(ServerWorld world, BlockPos startPos) {
+    private void fellTree(ServerLevel world, BlockPos startPos) {
         Set<BlockPos> visitedLogs = new HashSet<>();
         Queue<BlockPos> queue = new ArrayDeque<>();
         Set<BlockPos> leavesToBreak = new HashSet<>();
@@ -1018,7 +1015,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 for (int dy = -1; dy <= 1; dy++) {
                     for (int dz = -1; dz <= 1; dz++) {
                         if (dx == 0 && dy == 0 && dz == 0) continue;
-                        BlockPos neighbor = current.add(dx, dy, dz);
+                        BlockPos neighbor = current.offset(dx, dy, dz);
 
                         // Don't search deep into the ground
                         if (neighbor.getY() < startY - 1) continue;
@@ -1026,11 +1023,11 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                         if (Math.abs(neighbor.getX() - startPos.getX()) > 10 || Math.abs(neighbor.getZ() - startPos.getZ()) > 10) continue;
 
                         BlockState nState = world.getBlockState(neighbor);
-                        if (nState.isIn(BlockTags.LOGS)) {
+                        if (nState.is(BlockTags.LOGS)) {
                             if (visitedLogs.add(neighbor)) {
                                 queue.add(neighbor);
                             }
-                        } else if (nState.isIn(BlockTags.LEAVES)) {
+                        } else if (nState.is(BlockTags.LEAVES)) {
                             leavesToBreak.add(neighbor);
                         }
                     }
@@ -1043,8 +1040,8 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             Set<BlockPos> extraLeaves = new HashSet<>();
             for (BlockPos leaf : leavesToBreak) {
                 for (Direction dir : Direction.values()) {
-                    BlockPos nLeaf = leaf.offset(dir);
-                    if (!leavesToBreak.contains(nLeaf) && world.getBlockState(nLeaf).isIn(BlockTags.LEAVES)) {
+                    BlockPos nLeaf = leaf.relative(dir);
+                    if (!leavesToBreak.contains(nLeaf) && world.getBlockState(nLeaf).is(BlockTags.LEAVES)) {
                         extraLeaves.add(nLeaf);
                     }
                 }
@@ -1062,48 +1059,48 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         // 4. Break all canopy leaves
         for (BlockPos leafPos : leavesToBreak) {
             BlockState leafState = world.getBlockState(leafPos);
-            if (leafState.isIn(BlockTags.LEAVES)) {
-                List<ItemStack> drops = Block.getDroppedStacks(leafState, world, leafPos, null, null, ItemStack.EMPTY);
-                world.breakBlock(leafPos, false);
+            if (leafState.is(BlockTags.LEAVES)) {
+                List<ItemStack> drops = Block.getDrops(leafState, world, leafPos, null, null, ItemStack.EMPTY);
+                world.destroyBlock(leafPos, false);
                 for (ItemStack drop : drops) {
                     ItemStack leftover = insertItem(drop);
                     if (!leftover.isEmpty()) {
-                        ItemScatterer.spawn(world, this.pos.getX(), this.pos.getY(), this.pos.getZ(), leftover);
+                        Containers.dropItemStack(world, this.worldPosition.getX(), this.worldPosition.getY(), this.worldPosition.getZ(), leftover);
                     }
                 }
             }
         }
 
         // 5. Vacuum all nearby drops into the turtle
-        Box vacuumBox = new Box(startPos).expand(12, 16, 12);
-        List<ItemEntity> drops = world.getEntitiesByClass(ItemEntity.class, vacuumBox, e -> e.isAlive());
+        AABB vacuumBox = new AABB(startPos).inflate(12, 16, 12);
+        List<ItemEntity> drops = world.getEntitiesOfClass(ItemEntity.class, vacuumBox, e -> e.isAlive());
         for (ItemEntity drop : drops) {
-            ItemStack leftover = insertItem(drop.getStack());
+            ItemStack leftover = insertItem(drop.getItem());
             if (leftover.isEmpty()) {
                 drop.discard();
             } else {
-                drop.setStack(leftover);
+                drop.setItem(leftover);
             }
         }
 
-        world.playSound(null, startPos, SoundEvents.BLOCK_WOOD_BREAK, SoundCategory.BLOCKS, 1.0f, 0.8f);
+        world.playSound(null, startPos, SoundEvents.WOOD_BREAK, SoundSource.BLOCKS, 1.0f, 0.8f);
     }
 
     public boolean hasWaterBucket() {
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
-            if (this.items.get(i).isOf(Items.WATER_BUCKET)) return true;
+            if (this.items.get(i).is(Items.WATER_BUCKET)) return true;
         }
         return false;
     }
 
-    private boolean placeWaterSource(ServerWorld world, BlockPos waterPos) {
+    private boolean placeWaterSource(ServerLevel world, BlockPos waterPos) {
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
             ItemStack stack = this.items.get(i);
-            if (stack.isOf(Items.WATER_BUCKET)) {
+            if (stack.is(Items.WATER_BUCKET)) {
                 this.items.set(i, new ItemStack(Items.BUCKET));
-                world.setBlockState(waterPos, Blocks.WATER.getDefaultState(), Block.NOTIFY_ALL);
-                world.playSound(null, waterPos, SoundEvents.ITEM_BUCKET_EMPTY, SoundCategory.BLOCKS, 1.0f, 1.0f);
-                markDirty();
+                world.setBlock(waterPos, Blocks.WATER.defaultBlockState(), Block.UPDATE_ALL);
+                world.playSound(null, waterPos, SoundEvents.BUCKET_EMPTY, SoundSource.BLOCKS, 1.0f, 1.0f);
+                setChanged();
                 return true;
             }
         }
@@ -1111,20 +1108,20 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     }
 
     private boolean isTillable(BlockState state) {
-        return state.isOf(Blocks.DIRT) || state.isOf(Blocks.GRASS_BLOCK) ||
-               state.isOf(Blocks.DIRT_PATH) || state.isOf(Blocks.COARSE_DIRT) ||
-               state.isOf(Blocks.ROOTED_DIRT);
+        return state.is(Blocks.DIRT) || state.is(Blocks.GRASS_BLOCK) ||
+               state.is(Blocks.DIRT_PATH) || state.is(Blocks.COARSE_DIRT) ||
+               state.is(Blocks.ROOTED_DIRT);
     }
 
     private BlockState getCropStateForSeed(ItemStack stack) {
-        if (stack.isOf(Items.WHEAT_SEEDS)) return Blocks.WHEAT.getDefaultState();
-        if (stack.isOf(Items.CARROT)) return Blocks.CARROTS.getDefaultState();
-        if (stack.isOf(Items.POTATO)) return Blocks.POTATOES.getDefaultState();
-        if (stack.isOf(Items.BEETROOT_SEEDS)) return Blocks.BEETROOTS.getDefaultState();
-        if (stack.isOf(Items.MELON_SEEDS)) return Blocks.MELON_STEM.getDefaultState();
-        if (stack.isOf(Items.PUMPKIN_SEEDS)) return Blocks.PUMPKIN_STEM.getDefaultState();
-        if (stack.isOf(Items.TORCHFLOWER_SEEDS)) return Blocks.TORCHFLOWER_CROP.getDefaultState();
-        if (stack.isOf(Items.PITCHER_POD)) return Blocks.PITCHER_CROP.getDefaultState();
+        if (stack.is(Items.WHEAT_SEEDS)) return Blocks.WHEAT.defaultBlockState();
+        if (stack.is(Items.CARROT)) return Blocks.CARROTS.defaultBlockState();
+        if (stack.is(Items.POTATO)) return Blocks.POTATOES.defaultBlockState();
+        if (stack.is(Items.BEETROOT_SEEDS)) return Blocks.BEETROOTS.defaultBlockState();
+        if (stack.is(Items.MELON_SEEDS)) return Blocks.MELON_STEM.defaultBlockState();
+        if (stack.is(Items.PUMPKIN_SEEDS)) return Blocks.PUMPKIN_STEM.defaultBlockState();
+        if (stack.is(Items.TORCHFLOWER_SEEDS)) return Blocks.TORCHFLOWER_CROP.defaultBlockState();
+        if (stack.is(Items.PITCHER_POD)) return Blocks.PITCHER_CROP.defaultBlockState();
         return null;
     }
 
@@ -1134,11 +1131,11 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             if (!stack.isEmpty()) {
                 BlockState crop = getCropStateForSeed(stack);
                 if (crop != null) {
-                    stack.decrement(1);
+                    stack.shrink(1);
                     if (stack.isEmpty()) {
                         this.items.set(i, ItemStack.EMPTY);
                     }
-                    markDirty();
+                    setChanged();
                     return crop;
                 }
             }
@@ -1150,21 +1147,21 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         Item seedItem = cropBlock.asItem();
         for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
             ItemStack stack = this.items.get(i);
-            if (stack.isOf(seedItem)) {
-                stack.decrement(1);
+            if (stack.is(seedItem)) {
+                stack.shrink(1);
                 if (stack.isEmpty()) {
                     this.items.set(i, ItemStack.EMPTY);
                 }
-                markDirty();
+                setChanged();
                 return;
             }
         }
     }
 
-    private void executeFarmCreator(ServerWorld world) {
+    private void executeFarmCreator(ServerLevel world) {
         if (!hasRequiredTool(AppType.FARM_CREATOR)) {
             this.status = TurtleStatus.NO_TOOL;
-            markDirty();
+            setChanged();
             return;
         }
 
@@ -1172,10 +1169,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
         // 1. Center water block placement
         if (this.farmRow == -1) {
-            BlockPos waterPos = this.pos.down();
-            if (world.getBlockState(waterPos).isOf(Blocks.WATER)) {
+            BlockPos waterPos = this.worldPosition.below();
+            if (world.getBlockState(waterPos).is(Blocks.WATER)) {
                 this.farmRow = 0;
-                markDirty();
+                setChanged();
                 return;
             }
 
@@ -1183,10 +1180,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             dig(world, waterPos);
             if (placeWaterSource(world, waterPos)) {
                 this.farmRow = 0;
-                markDirty();
+                setChanged();
             } else {
                 this.status = TurtleStatus.NO_TOOL; // "Need Water!"
-                markDirty();
+                setChanged();
             }
             return;
         }
@@ -1196,35 +1193,35 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             if (!consumeFuel(1)) return;
 
             Direction facing = getFacing();
-            Direction left = facing.rotateYCounterclockwise();
+            Direction left = facing.getCounterClockWise();
             int dz = this.farmRow - 4;
 
             for (int dx = -4; dx <= 4; dx++) {
                 if (dx == 0 && dz == 0) continue; // Skip center water block under turtle
 
-                BlockPos groundPos = this.pos.offset(facing, dz).offset(left, dx).down();
-                BlockPos cropPos = groundPos.up();
+                BlockPos groundPos = this.worldPosition.relative(facing, dz).relative(left, dx).below();
+                BlockPos cropPos = groundPos.above();
 
                 // Clear surface obstruction (grass, flowers, snow, dirt bumps, etc.)
                 BlockState cropState = world.getBlockState(cropPos);
-                if (!cropState.isAir() && (cropState.getCollisionShape(world, cropPos).isEmpty() || cropState.isReplaceable() || cropState.isOf(Blocks.DIRT) || cropState.isOf(Blocks.GRASS_BLOCK))) {
+                if (!cropState.isAir() && (cropState.getCollisionShape(world, cropPos).isEmpty() || cropState.canBeReplaced() || cropState.is(Blocks.DIRT) || cropState.is(Blocks.GRASS_BLOCK))) {
                     dig(world, cropPos);
                 }
 
                 // Till ground into farmland
                 BlockState gState = world.getBlockState(groundPos);
                 if (isTillable(gState)) {
-                    world.setBlockState(groundPos, Blocks.FARMLAND.getDefaultState(), Block.NOTIFY_ALL);
+                    world.setBlock(groundPos, Blocks.FARMLAND.defaultBlockState(), Block.UPDATE_ALL);
                     damageTool();
-                    world.playSound(null, groundPos, SoundEvents.ITEM_HOE_TILL, SoundCategory.BLOCKS, 0.8f, 1.0f);
+                    world.playSound(null, groundPos, SoundEvents.HOE_TILL.value(), SoundSource.BLOCKS, 0.8f, 1.0f);
                 }
 
                 // Plant seed if ground is farmland and air above is clear
-                if (world.getBlockState(groundPos).isOf(Blocks.FARMLAND) && world.getBlockState(cropPos).isAir()) {
+                if (world.getBlockState(groundPos).is(Blocks.FARMLAND) && world.getBlockState(cropPos).isAir()) {
                     BlockState seedCrop = consumeSeedAndGetCrop();
                     if (seedCrop != null) {
-                        world.setBlockState(cropPos, seedCrop, Block.NOTIFY_ALL);
-                        world.playSound(null, cropPos, SoundEvents.ITEM_CROP_PLANT, SoundCategory.BLOCKS, 0.8f, 1.0f);
+                        world.setBlock(cropPos, seedCrop, Block.UPDATE_ALL);
+                        world.playSound(null, cropPos, SoundEvents.CROP_PLANTED, SoundSource.BLOCKS, 0.8f, 1.0f);
                     }
                 }
             }
@@ -1233,7 +1230,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             int currentUnits = this.farmIndex * 10 + (this.farmRow + 1);
             this.progress = Math.min(100, (currentUnits * 100) / totalUnits);
             this.farmRow++;
-            markDirty();
+            setChanged();
             return;
         }
 
@@ -1242,17 +1239,17 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             if (this.farmIndex + 1 < targetFarms) {
                 if (!hasWaterBucket()) {
                     this.status = TurtleStatus.NO_TOOL; // "Need Water!"
-                    markDirty();
+                    setChanged();
                     return;
                 }
 
                 Direction facing = getFacing();
 
                 // On start of advance, lift UP 1 block to hover safely above the newly planted crops
-                if (this.farmMoveStep == 0 && !world.getBlockState(this.pos.down()).isAir()) {
+                if (this.farmMoveStep == 0 && !world.getBlockState(this.worldPosition.below()).isAir()) {
                     TurtleBlockEntity up = move(world, Direction.UP);
                     if (up != null) {
-                        up.markDirty();
+                        up.setChanged();
                     }
                     return;
                 }
@@ -1274,7 +1271,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                         // Arrived at the new farm center 9 blocks forward!
                         // Descend until resting directly on top of solid ground
                         TurtleBlockEntity landedTurtle = movedTurtle;
-                        for (int d = 0; d < 5 && world.getBlockState(landedTurtle.pos.down()).isAir(); d++) {
+                        for (int d = 0; d < 5 && world.getBlockState(landedTurtle.worldPosition.below()).isAir(); d++) {
                             TurtleBlockEntity down = landedTurtle.move(world, Direction.DOWN);
                             if (down == null) break;
                             landedTurtle = down;
@@ -1283,37 +1280,37 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                         landedTurtle.farmMoveStep = 0;
                         landedTurtle.farmIndex++;
                         landedTurtle.farmRow = -1; // Place water for next farm!
-                        landedTurtle.markDirty();
+                        landedTurtle.setChanged();
                     } else {
-                        movedTurtle.markDirty();
+                        movedTurtle.setChanged();
                     }
                 } else {
                     this.status = TurtleStatus.BLOCKED;
-                    markDirty();
+                    setChanged();
                 }
             } else {
                 this.status = TurtleStatus.COMPLETED;
                 this.progress = 100;
-                world.playSound(null, this.pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.BLOCKS, 1.0f, 1.0f);
-                markDirty();
+                world.playSound(null, this.worldPosition, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.BLOCKS, 1.0f, 1.0f);
+                setChanged();
             }
         }
     }
 
-    private void executeFarmer(ServerWorld world) {
+    private void executeFarmer(ServerLevel world) {
         Direction facing = getFacing();
-        Direction left = facing.rotateYCounterclockwise();
+        Direction left = facing.getCounterClockWise();
 
         if (!hasRequiredTool(AppType.FARMER)) {
             this.status = TurtleStatus.NO_TOOL;
-            markDirty();
+            setChanged();
             return;
         }
 
         // 1. Hover lift on initial start: if sitting directly on ground/farmland, lift up 1 block above crops
         if (this.stepsMoved == 0) {
-            BlockState below = world.getBlockState(this.pos.down());
-            if (below.isSolidBlock(world, this.pos.down()) || below.isOf(Blocks.FARMLAND)) {
+            BlockState below = world.getBlockState(this.worldPosition.below());
+            if (below.isSolid() || below.is(Blocks.FARMLAND)) {
                 TurtleBlockEntity up = move(world, Direction.UP);
                 if (up != null) {
                     up.executeFarmer(world);
@@ -1325,8 +1322,8 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         // 2. Scan 9-wide swath below hovering turtle
         boolean foundAnyCropsOrFarmland = false;
         for (int offset = -4; offset <= 4; offset++) {
-            BlockPos p1 = this.pos.offset(left, offset).down();
-            BlockPos p2 = p1.down();
+            BlockPos p1 = this.worldPosition.relative(left, offset).below();
+            BlockPos p2 = p1.below();
 
             BlockPos targetCrop = null;
             BlockState cropState = null;
@@ -1341,27 +1338,27 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
             if (targetCrop != null && cropState != null && cropState.getBlock() instanceof CropBlock cropBlock) {
                 foundAnyCropsOrFarmland = true;
-                if (cropBlock.isMature(cropState)) {
+                if (cropBlock.isMaxAge(cropState)) {
                     dig(world, targetCrop);
-                    world.setBlockState(targetCrop, cropBlock.withAge(0), Block.NOTIFY_ALL);
+                    world.setBlock(targetCrop, cropBlock.getStateForAge(0), Block.UPDATE_ALL);
                     consumeSeedForCrop(cropBlock);
                     damageTool();
-                    world.playSound(null, targetCrop, SoundEvents.ITEM_CROP_PLANT, SoundCategory.BLOCKS, 0.8f, 1.0f);
+                    world.playSound(null, targetCrop, SoundEvents.CROP_PLANTED, SoundSource.BLOCKS, 0.8f, 1.0f);
                 }
-            } else if (world.getBlockState(p1).isOf(Blocks.FARMLAND) || world.getBlockState(p2).isOf(Blocks.FARMLAND)) {
+            } else if (world.getBlockState(p1).is(Blocks.FARMLAND) || world.getBlockState(p2).is(Blocks.FARMLAND)) {
                 foundAnyCropsOrFarmland = true;
             }
         }
 
         // 3. Vacuum drops in 5-block radius into turtle
-        Box vacuumBox = new Box(this.pos).expand(5, 3, 5);
-        List<ItemEntity> drops = world.getEntitiesByClass(ItemEntity.class, vacuumBox, e -> e.isAlive());
+        AABB vacuumBox = new AABB(this.worldPosition).inflate(5, 3, 5);
+        List<ItemEntity> drops = world.getEntitiesOfClass(ItemEntity.class, vacuumBox, e -> e.isAlive());
         for (ItemEntity drop : drops) {
-            ItemStack leftover = insertItem(drop.getStack());
+            ItemStack leftover = insertItem(drop.getItem());
             if (leftover.isEmpty()) {
                 drop.discard();
             } else {
-                drop.setStack(leftover);
+                drop.setItem(leftover);
             }
         }
 
@@ -1370,7 +1367,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             move(world, Direction.DOWN);
             this.status = TurtleStatus.COMPLETED;
             this.progress = 100;
-            markDirty();
+            setChanged();
             return;
         }
 
@@ -1378,14 +1375,14 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         // Check if the terrace ahead rises up:
         // If there are crops or farmland directly ahead at the turtle's hover height,
         // we must step UP 1 block first so we hover above the elevated crops!
-        BlockPos frontPos = this.pos.offset(facing);
+        BlockPos frontPos = this.worldPosition.relative(facing);
         BlockState frontState = world.getBlockState(frontPos);
-        boolean frontHasElevatedCrops = frontState.getBlock() instanceof CropBlock || frontState.isOf(Blocks.FARMLAND);
+        boolean frontHasElevatedCrops = frontState.getBlock() instanceof CropBlock || frontState.is(Blocks.FARMLAND);
 
         if (!frontHasElevatedCrops) {
             for (int offset = -4; offset <= 4; offset++) {
-                BlockState s = world.getBlockState(frontPos.offset(left, offset));
-                if (s.getBlock() instanceof CropBlock || s.isOf(Blocks.FARMLAND)) {
+                BlockState s = world.getBlockState(frontPos.relative(left, offset));
+                if (s.getBlock() instanceof CropBlock || s.is(Blocks.FARMLAND)) {
                     frontHasElevatedCrops = true;
                     break;
                 }
@@ -1411,7 +1408,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
 
         if (movedTurtle != null) {
             // If the terrace stepped down (both 1 and 2 blocks below are air), adjust hover down
-            if (world.getBlockState(movedTurtle.pos.down()).isAir() && world.getBlockState(movedTurtle.pos.down().down()).isAir()) {
+            if (world.getBlockState(movedTurtle.worldPosition.below()).isAir() && world.getBlockState(movedTurtle.worldPosition.below().below()).isAir()) {
                 TurtleBlockEntity down = movedTurtle.move(world, Direction.DOWN);
                 if (down != null) {
                     movedTurtle = down;
@@ -1424,53 +1421,53 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 movedTurtle.move(world, Direction.DOWN);
                 movedTurtle.status = TurtleStatus.COMPLETED;
             }
-            movedTurtle.markDirty();
+            movedTurtle.setChanged();
         } else {
             activeTurtle.move(world, Direction.DOWN);
             this.status = TurtleStatus.BLOCKED;
-            markDirty();
+            setChanged();
         }
     }
 
     private float getSwordDamage(ItemStack sword) {
-        if (sword.isOf(Items.NETHERITE_SWORD)) return 8.0f;
-        if (sword.isOf(Items.DIAMOND_SWORD)) return 7.0f;
-        if (sword.isOf(Items.IRON_SWORD)) return 6.0f;
-        if (sword.isOf(Items.STONE_SWORD)) return 5.0f;
+        if (sword.is(Items.NETHERITE_SWORD)) return 8.0f;
+        if (sword.is(Items.DIAMOND_SWORD)) return 7.0f;
+        if (sword.is(Items.IRON_SWORD)) return 6.0f;
+        if (sword.is(Items.STONE_SWORD)) return 5.0f;
         return 4.0f;
     }
 
-    private void executeSentry(ServerWorld world) {
+    private void executeSentry(ServerLevel world) {
         if (!hasRequiredTool(AppType.SENTRY)) {
             this.status = TurtleStatus.NO_TOOL;
-            markDirty();
+            setChanged();
             return;
         }
 
         int radius = Math.max(3, Math.min(10, this.configDistance));
-        Box searchBox = new Box(this.pos).expand(radius, 3, radius);
-        List<MobEntity> monsters = world.getEntitiesByClass(MobEntity.class, searchBox, e -> e.isAlive() && e instanceof Monster);
+        AABB searchBox = new AABB(this.worldPosition).inflate(radius, 3, radius);
+        List<Mob> monsters = world.getEntitiesOfClass(Mob.class, searchBox, e -> e.isAlive() && e instanceof Monster);
 
         if (!monsters.isEmpty()) {
-            MobEntity target = monsters.get(0);
+            Mob target = monsters.get(0);
             if (consumeFuel(1)) {
                 ItemStack tool = getToolStack();
                 float dmg = getSwordDamage(tool);
-                target.damage(world, world.getDamageSources().generic(), dmg);
+                target.hurtServer((ServerLevel) world, world.damageSources().generic(), dmg);
                 damageTool();
-                world.playSound(null, this.pos, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                world.playSound(null, this.worldPosition, SoundEvents.PLAYER_ATTACK_STRONG, SoundSource.BLOCKS, 1.0f, 1.0f);
 
                 // Suck up nearby item drops
-                List<ItemEntity> items = world.getEntitiesByClass(ItemEntity.class, searchBox, e -> e.isAlive());
+                List<ItemEntity> items = world.getEntitiesOfClass(ItemEntity.class, searchBox, e -> e.isAlive());
                 for (ItemEntity drop : items) {
-                    ItemStack leftover = insertItem(drop.getStack());
+                    ItemStack leftover = insertItem(drop.getItem());
                     if (leftover.isEmpty()) {
                         drop.discard();
                     } else {
-                        drop.setStack(leftover);
+                        drop.setItem(leftover);
                     }
                 }
-                markDirty();
+                setChanged();
             }
         }
     }
@@ -1478,7 +1475,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     // --- INVENTORY IMPLEMENTATION ---
 
     @Override
-    public int size() {
+    public int getContainerSize() {
         return TOTAL_SLOTS;
     }
 
@@ -1491,26 +1488,26 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     }
 
     @Override
-    public ItemStack getStack(int slot) {
+    public ItemStack getItem(int slot) {
         return this.items.get(slot);
     }
 
     @Override
-    public ItemStack removeStack(int slot, int amount) {
-        ItemStack result = Inventories.splitStack(this.items, slot, amount);
-        if (!result.isEmpty()) markDirty();
+    public ItemStack removeItem(int slot, int amount) {
+        ItemStack result = ContainerHelper.removeItem(this.items, slot, amount);
+        if (!result.isEmpty()) setChanged();
         return result;
     }
 
     @Override
-    public ItemStack removeStack(int slot) {
-        ItemStack result = Inventories.removeStack(this.items, slot);
-        if (!result.isEmpty()) markDirty();
+    public ItemStack removeItemNoUpdate(int slot) {
+        ItemStack result = ContainerHelper.takeItem(this.items, slot);
+        if (!result.isEmpty()) setChanged();
         return result;
     }
 
     @Override
-    public void setStack(int slot, ItemStack stack) {
+    public void setItem(int slot, ItemStack stack) {
         this.items.set(slot, stack);
         if (slot == TurtleScreenHandler.DISK_SLOT && this.status != TurtleStatus.RUNNING) {
             if (stack.getItem() instanceof FloppyDiskItem diskItem && diskItem.getAppType() != AppType.NONE) {
@@ -1525,28 +1522,28 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 this.status = TurtleStatus.IDLE;
             }
         }
-        markDirty();
+        setChanged();
     }
 
     @Override
-    public boolean canPlayerUse(PlayerEntity player) {
-        return Inventory.canPlayerUse(this, player);
+    public boolean stillValid(Player player) {
+        return Container.stillValidBlockEntity(this, player);
     }
 
     @Override
-    public void clear() {
+    public void clearContent() {
         this.items.clear();
-        markDirty();
+        setChanged();
     }
 
     @Override
-    public Text getDisplayName() {
-        return Text.literal("Turtle");
+    public Component getDisplayName() {
+        return Component.literal("Turtle");
     }
 
     @Nullable
     @Override
-    public ScreenHandler createMenu(int syncId, PlayerInventory playerInventory, PlayerEntity player) {
+    public AbstractContainerMenu createMenu(int syncId, Inventory playerInventory, Player player) {
         TurtleScreenHandler.DelegatingInventory inv = new TurtleScreenHandler.DelegatingInventory(this);
         TurtleScreenHandler.DelegatingPropertyDelegate props = new TurtleScreenHandler.DelegatingPropertyDelegate(this.propertyDelegate);
         TurtleScreenHandler handler = new TurtleScreenHandler(syncId, playerInventory, inv, props);
@@ -1557,37 +1554,37 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     // --- DATA SERIALIZATION ---
 
     @Override
-    protected void writeData(WriteView view) {
-        super.writeData(view);
-        Inventories.writeData(view, this.items);
-        view.putInt("fuel", this.fuel);
-        view.putInt("maxFuel", this.maxFuel);
-        view.putInt("status", this.status.getId());
-        view.putInt("configDistance", this.configDistance);
-        view.putInt("stepsMoved", this.stepsMoved);
-        view.putInt("progress", this.progress);
-        view.putInt("quarryLayer", this.quarryLayer);
-        view.putInt("quarryIndex", this.quarryIndex);
-        view.putInt("farmIndex", this.farmIndex);
-        view.putInt("farmRow", this.farmRow);
-        view.putInt("farmMoveStep", this.farmMoveStep);
+    protected void saveAdditional(ValueOutput output) {
+        super.saveAdditional(output);
+        ContainerHelper.saveAllItems(output, this.items);
+        output.putInt("fuel", this.fuel);
+        output.putInt("maxFuel", this.maxFuel);
+        output.putInt("status", this.status.getId());
+        output.putInt("configDistance", this.configDistance);
+        output.putInt("stepsMoved", this.stepsMoved);
+        output.putInt("progress", this.progress);
+        output.putInt("quarryLayer", this.quarryLayer);
+        output.putInt("quarryIndex", this.quarryIndex);
+        output.putInt("farmIndex", this.farmIndex);
+        output.putInt("farmRow", this.farmRow);
+        output.putInt("farmMoveStep", this.farmMoveStep);
     }
 
     @Override
-    protected void readData(ReadView view) {
-        super.readData(view);
-        this.items = DefaultedList.ofSize(TOTAL_SLOTS, ItemStack.EMPTY);
-        Inventories.readData(view, this.items);
-        this.fuel = view.getInt("fuel", 0);
-        this.maxFuel = view.getInt("maxFuel", 10000);
-        this.status = TurtleStatus.fromIndex(view.getInt("status", 0));
-        this.configDistance = view.getInt("configDistance", 16);
-        this.stepsMoved = view.getInt("stepsMoved", 0);
-        this.progress = view.getInt("progress", 0);
-        this.quarryLayer = view.getInt("quarryLayer", 0);
-        this.quarryIndex = view.getInt("quarryIndex", 0);
-        this.farmIndex = view.getInt("farmIndex", 0);
-        this.farmRow = view.getInt("farmRow", -1);
-        this.farmMoveStep = view.getInt("farmMoveStep", 0);
+    protected void loadAdditional(ValueInput input) {
+        super.loadAdditional(input);
+        this.items = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY);
+        ContainerHelper.loadAllItems(input, this.items);
+        this.fuel = input.getIntOr("fuel", 0);
+        this.maxFuel = input.getIntOr("maxFuel", 10000);
+        this.status = TurtleStatus.fromIndex(input.getIntOr("status", 0));
+        this.configDistance = input.getIntOr("configDistance", 16);
+        this.stepsMoved = input.getIntOr("stepsMoved", 0);
+        this.progress = input.getIntOr("progress", 0);
+        this.quarryLayer = input.getIntOr("quarryLayer", 0);
+        this.quarryIndex = input.getIntOr("quarryIndex", 0);
+        this.farmIndex = input.getIntOr("farmIndex", 0);
+        this.farmRow = input.getIntOr("farmRow", -1);
+        this.farmMoveStep = input.getIntOr("farmMoveStep", 0);
     }
 }

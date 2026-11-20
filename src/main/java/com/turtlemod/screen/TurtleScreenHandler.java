@@ -3,17 +3,18 @@ package com.turtlemod.screen;
 import com.turtlemod.TurtleMod;
 import com.turtlemod.block.entity.TurtleBlockEntity;
 import com.turtlemod.item.FloppyDiskItem;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ArrayPropertyDelegate;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 
-public class TurtleScreenHandler extends ScreenHandler {
+public class TurtleScreenHandler extends AbstractContainerMenu {
     public static final int FUEL_SLOT = 0;
     public static final int DISK_SLOT = 1;
     public static final int TOOL_SLOT = 2;
@@ -21,17 +22,17 @@ public class TurtleScreenHandler extends ScreenHandler {
     public static final int STORAGE_COUNT = 9;
     public static final int TOTAL_TURTLE_SLOTS = 12;
 
-    private final Inventory inventory;
-    private final PropertyDelegate propertyDelegate;
+    private final Container inventory;
+    private final ContainerData propertyDelegate;
     private TurtleBlockEntity turtle;
 
-    public TurtleScreenHandler(int syncId, PlayerInventory playerInventory) {
-        this(syncId, playerInventory, new SimpleInventory(TOTAL_TURTLE_SLOTS), new ArrayPropertyDelegate(7));
+    public TurtleScreenHandler(int syncId, Inventory playerInventory) {
+        this(syncId, playerInventory, new SimpleContainer(TOTAL_TURTLE_SLOTS), new SimpleContainerData(7));
     }
 
-    public TurtleScreenHandler(int syncId, PlayerInventory playerInventory, Inventory inventory, PropertyDelegate propertyDelegate) {
+    public TurtleScreenHandler(int syncId, Inventory playerInventory, Container inventory, ContainerData propertyDelegate) {
         super(TurtleMod.TURTLE_SCREEN_HANDLER, syncId);
-        checkSize(inventory, TOTAL_TURTLE_SLOTS);
+        checkContainerSize(inventory, TOTAL_TURTLE_SLOTS);
         this.inventory = inventory;
         this.propertyDelegate = propertyDelegate;
         if (inventory instanceof TurtleBlockEntity tbe) {
@@ -39,7 +40,7 @@ public class TurtleScreenHandler extends ScreenHandler {
         } else if (inventory instanceof DelegatingInventory delegating) {
             this.turtle = delegating.getDelegate();
         }
-        inventory.onOpen(playerInventory.player);
+        inventory.startOpen(playerInventory.player);
 
         // Slot 0: Fuel Slot
         this.addSlot(new Slot(inventory, FUEL_SLOT, 18, 62));
@@ -47,7 +48,7 @@ public class TurtleScreenHandler extends ScreenHandler {
         // Slot 1: Disk Slot
         this.addSlot(new Slot(inventory, DISK_SLOT, 18, 18) {
             @Override
-            public boolean canInsert(ItemStack stack) {
+            public boolean mayPlace(ItemStack stack) {
                 return stack.getItem() instanceof FloppyDiskItem;
             }
         });
@@ -75,7 +76,7 @@ public class TurtleScreenHandler extends ScreenHandler {
             this.addSlot(new Slot(playerInventory, col, 8 + col * 18, 142));
         }
 
-        this.addProperties(propertyDelegate);
+        this.addDataSlots(propertyDelegate);
     }
 
     public int getFuel() {
@@ -114,7 +115,7 @@ public class TurtleScreenHandler extends ScreenHandler {
         if (this.propertyDelegate instanceof DelegatingPropertyDelegate delegatingProps) {
             delegatingProps.setDelegate(newTurtle.getPropertyDelegate());
         }
-        this.sendContentUpdates();
+        this.broadcastChanges();
     }
 
     public TurtleBlockEntity getTurtle() {
@@ -122,7 +123,7 @@ public class TurtleScreenHandler extends ScreenHandler {
     }
 
     @Override
-    public boolean onButtonClick(PlayerEntity player, int id) {
+    public boolean clickMenuButton(Player player, int id) {
         if (this.turtle != null) {
             this.turtle.onButtonPressed(id);
             return true;
@@ -135,15 +136,15 @@ public class TurtleScreenHandler extends ScreenHandler {
     }
 
     @Override
-    public boolean canUse(PlayerEntity player) {
+    public boolean stillValid(Player player) {
         if (this.turtle != null) {
-            if (player.getEntityWorld() != this.turtle.getWorld()) return false;
-            return player.squaredDistanceTo(this.turtle.getPos().toCenterPos()) <= 100.0;
+            if (player.level() != this.turtle.getLevel()) return false;
+            return player.distanceToSqr(Vec3.atCenterOf(this.turtle.getBlockPos())) <= 100.0;
         }
-        return this.inventory.canPlayerUse(player);
+        return this.inventory.stillValid(player);
     }
 
-    public static class DelegatingInventory implements Inventory {
+    public static class DelegatingInventory implements Container {
         private TurtleBlockEntity delegate;
 
         public DelegatingInventory(TurtleBlockEntity delegate) {
@@ -159,8 +160,8 @@ public class TurtleScreenHandler extends ScreenHandler {
         }
 
         @Override
-        public int size() {
-            return delegate != null ? delegate.size() : TOTAL_TURTLE_SLOTS;
+        public int getContainerSize() {
+            return delegate != null ? delegate.getContainerSize() : TOTAL_TURTLE_SLOTS;
         }
 
         @Override
@@ -169,56 +170,56 @@ public class TurtleScreenHandler extends ScreenHandler {
         }
 
         @Override
-        public ItemStack getStack(int slot) {
-            return delegate != null ? delegate.getStack(slot) : ItemStack.EMPTY;
+        public ItemStack getItem(int slot) {
+            return delegate != null ? delegate.getItem(slot) : ItemStack.EMPTY;
         }
 
         @Override
-        public ItemStack removeStack(int slot, int amount) {
-            return delegate != null ? delegate.removeStack(slot, amount) : ItemStack.EMPTY;
+        public ItemStack removeItem(int slot, int amount) {
+            return delegate != null ? delegate.removeItem(slot, amount) : ItemStack.EMPTY;
         }
 
         @Override
-        public ItemStack removeStack(int slot) {
-            return delegate != null ? delegate.removeStack(slot) : ItemStack.EMPTY;
+        public ItemStack removeItemNoUpdate(int slot) {
+            return delegate != null ? delegate.removeItemNoUpdate(slot) : ItemStack.EMPTY;
         }
 
         @Override
-        public void setStack(int slot, ItemStack stack) {
+        public void setItem(int slot, ItemStack stack) {
             if (delegate != null) {
-                delegate.setStack(slot, stack);
+                delegate.setItem(slot, stack);
             }
         }
 
         @Override
-        public void markDirty() {
+        public void setChanged() {
             if (delegate != null) {
-                delegate.markDirty();
+                delegate.setChanged();
             }
         }
 
         @Override
-        public boolean canPlayerUse(PlayerEntity player) {
+        public boolean stillValid(Player player) {
             if (delegate == null || delegate.isRemoved()) return false;
-            return player.squaredDistanceTo(delegate.getPos().toCenterPos()) <= 100.0;
+            return player.distanceToSqr(Vec3.atCenterOf(delegate.getBlockPos())) <= 100.0;
         }
 
         @Override
-        public void clear() {
+        public void clearContent() {
             if (delegate != null) {
-                delegate.clear();
+                delegate.clearContent();
             }
         }
     }
 
-    public static class DelegatingPropertyDelegate implements PropertyDelegate {
-        private PropertyDelegate delegate;
+    public static class DelegatingPropertyDelegate implements ContainerData {
+        private ContainerData delegate;
 
-        public DelegatingPropertyDelegate(PropertyDelegate delegate) {
+        public DelegatingPropertyDelegate(ContainerData delegate) {
             this.delegate = delegate;
         }
 
-        public void setDelegate(PropertyDelegate delegate) {
+        public void setDelegate(ContainerData delegate) {
             this.delegate = delegate;
         }
 
@@ -235,35 +236,35 @@ public class TurtleScreenHandler extends ScreenHandler {
         }
 
         @Override
-        public int size() {
-            return delegate != null ? delegate.size() : 7;
+        public int getCount() {
+            return delegate != null ? delegate.getCount() : 7;
         }
     }
 
     @Override
-    public ItemStack quickMove(PlayerEntity player, int invSlot) {
+    public ItemStack quickMoveStack(Player player, int invSlot) {
         ItemStack newStack = ItemStack.EMPTY;
         Slot slot = this.slots.get(invSlot);
-        if (slot != null && slot.hasStack()) {
-            ItemStack originalStack = slot.getStack();
+        if (slot != null && slot.hasItem()) {
+            ItemStack originalStack = slot.getItem();
             newStack = originalStack.copy();
 
             if (invSlot < TOTAL_TURTLE_SLOTS) {
                 // Moving from Turtle to Player
-                if (!this.insertItem(originalStack, TOTAL_TURTLE_SLOTS, this.slots.size(), true)) {
+                if (!this.moveItemStackTo(originalStack, TOTAL_TURTLE_SLOTS, this.slots.size(), true)) {
                     return ItemStack.EMPTY;
                 }
             } else {
                 // Moving from Player to Turtle
                 if (originalStack.getItem() instanceof FloppyDiskItem) {
-                    if (!this.insertItem(originalStack, DISK_SLOT, DISK_SLOT + 1, false)) {
-                        if (!this.insertItem(originalStack, STORAGE_START, STORAGE_START + STORAGE_COUNT, false)) {
+                    if (!this.moveItemStackTo(originalStack, DISK_SLOT, DISK_SLOT + 1, false)) {
+                        if (!this.moveItemStackTo(originalStack, STORAGE_START, STORAGE_START + STORAGE_COUNT, false)) {
                             return ItemStack.EMPTY;
                         }
                     }
-                } else if (!this.insertItem(originalStack, STORAGE_START, STORAGE_START + STORAGE_COUNT, false)) {
-                    if (!this.insertItem(originalStack, FUEL_SLOT, FUEL_SLOT + 1, false)) {
-                        if (!this.insertItem(originalStack, TOOL_SLOT, TOOL_SLOT + 1, false)) {
+                } else if (!this.moveItemStackTo(originalStack, STORAGE_START, STORAGE_START + STORAGE_COUNT, false)) {
+                    if (!this.moveItemStackTo(originalStack, FUEL_SLOT, FUEL_SLOT + 1, false)) {
+                        if (!this.moveItemStackTo(originalStack, TOOL_SLOT, TOOL_SLOT + 1, false)) {
                             return ItemStack.EMPTY;
                         }
                     }
@@ -271,17 +272,17 @@ public class TurtleScreenHandler extends ScreenHandler {
             }
 
             if (originalStack.isEmpty()) {
-                slot.setStack(ItemStack.EMPTY);
+                slot.set(ItemStack.EMPTY);
             } else {
-                slot.markDirty();
+                slot.setChanged();
             }
         }
         return newStack;
     }
 
     @Override
-    public void onClosed(PlayerEntity player) {
-        super.onClosed(player);
-        this.inventory.onClose(player);
+    public void removed(Player player) {
+        super.removed(player);
+        this.inventory.stopOpen(player);
     }
 }
