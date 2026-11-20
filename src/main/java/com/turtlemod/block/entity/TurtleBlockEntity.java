@@ -522,6 +522,11 @@ public class TurtleBlockEntity extends BlockEntity implements Container, MenuPro
         }
 
         BlockState targetState = world.getBlockState(targetPos);
+        // Protect crops: never allow moving down into a crop
+        if (dir == Direction.DOWN && targetState.getBlock() instanceof CropBlock) {
+            return null;
+        }
+
         // Break non-solid obstacles (flowers, tall grass, ferns, saplings) so turtle can enter
         if (!targetState.isAir() && targetState.getFluidState().isEmpty() && !targetState.canBeReplaced()) {
             if (targetState.getCollisionShape(world, targetPos).isEmpty()) {
@@ -1364,9 +1369,9 @@ public class TurtleBlockEntity extends BlockEntity implements Container, MenuPro
 
         // 4. Auto-stop if we left the farm (no crops or farmland detected after advancing into the field)
         if (this.stepsMoved >= 2 && !foundAnyCropsOrFarmland) {
-            move(world, Direction.DOWN);
             this.status = TurtleStatus.COMPLETED;
             this.progress = 100;
+            world.playSound(null, this.worldPosition, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.BLOCKS, 1.0f, 1.0f);
             setChanged();
             return;
         }
@@ -1418,12 +1423,12 @@ public class TurtleBlockEntity extends BlockEntity implements Container, MenuPro
             movedTurtle.stepsMoved++;
             movedTurtle.progress = Math.min(100, (movedTurtle.stepsMoved * 100) / movedTurtle.configDistance);
             if (movedTurtle.stepsMoved >= movedTurtle.configDistance) {
-                movedTurtle.move(world, Direction.DOWN);
                 movedTurtle.status = TurtleStatus.COMPLETED;
+                movedTurtle.progress = 100;
+                world.playSound(null, movedTurtle.worldPosition, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.BLOCKS, 1.0f, 1.0f);
             }
             movedTurtle.setChanged();
         } else {
-            activeTurtle.move(world, Direction.DOWN);
             this.status = TurtleStatus.BLOCKED;
             setChanged();
         }
