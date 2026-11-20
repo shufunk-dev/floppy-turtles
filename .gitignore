@@ -20,3 +20,8 @@ crash-reports/
 # OS & Temp
 .DS_Store
 Thumbs.db
+
+# Project Publishing & Media Assets
+logo.jpg
+CURSEFORGE_*.md
+RELEASE_NOTES.md
