@@ -1,6 +1,6 @@
-# 🐢 Floppy Turtles (Minecraft 1.21.11 - Fabric)
+# 🐢 Floppy Turtles (Fabric - 1.21.11 & 26.3)
 
-An autonomous robotic turtle mod inspired by ComputerCraft, built from the ground up for **Minecraft 1.21.11** using **Fabric Loader 0.19.3** and **Java 21**.
+An autonomous robotic turtle mod inspired by ComputerCraft, built for **Minecraft 1.21.11** and **Minecraft 26.3** using modern **Fabric Loader** and **Java 21**.
 
 Instead of writing Lua code in an in-game terminal, **Floppy Turtles** gives you code-free automation! Simply equip your turtle with a tool, fuel it with coal, insert a pre-programmed **Floppy Disk**, and let it work. Configure operating ranges, bridge widths, and farm plot sizes directly inside an interactive retro-styled GUI.
 
@@ -147,27 +147,33 @@ Combine **1 Blank Floppy Disk** with the corresponding item in any crafting grid
 
 ## 🛠️ Building & Installation
 
-### Requirements
-- **Minecraft**: `1.21.11`
-- **Fabric Loader**: `0.19.3` or newer
-- **Fabric API**: Required for 1.21.11
+### Supported Versions & Branch Map
+
+| Minecraft Version | Git Branch | Fabric Loader | Fabric API | Output JAR |
+| :--- | :--- | :--- | :--- | :--- |
+| **1.21.11** | `main` | `>=0.19.3` | `0.141.6+1.21.11` | `floppy-turtles-1.0.0+1.21.11.jar` |
+| **26.3** | `26.3` | `>=0.19.5` | `0.166.2+26.3` | `floppy-turtles-1.0.0+26.3.jar` |
+
 - **Java**: `21` or newer
 
 ### Building from Source
-Clone the repository and build the jar using the Gradle wrapper:
+
+Clone the repository and build the jar for your target Minecraft version using the Gradle wrapper:
 
 ```bash
 # Clone the repository
 git clone https://github.com/shufunk-dev/floppy-turtles.git
 cd floppy-turtles
 
-# Build the mod jar
+# Build for Minecraft 1.21.11:
+git checkout main
 ./gradlew build
-```
+# Built JAR: build/libs/floppy-turtles-1.0.0+1.21.11.jar
 
-The compiled mod jar will be created at:
-```
-build/libs/floppy-turtles-1.0.0.jar
+# Build for Minecraft 26.3:
+git checkout 26.3
+./gradlew build
+# Built JAR: build/libs/floppy-turtles-1.0.0+26.3.jar
 ```
 
 ### Launch Development Environment
