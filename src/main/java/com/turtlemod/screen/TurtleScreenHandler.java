@@ -30,7 +30,8 @@ public class TurtleScreenHandler extends AbstractContainerMenu {
         this(syncId, playerInventory, new SimpleContainer(TOTAL_TURTLE_SLOTS), new SimpleContainerData(11));
     }
 
-    public TurtleScreenHandler(int syncId, Inventory playerInventory, Container inventory, ContainerData propertyDelegate) {
+    public TurtleScreenHandler(int syncId, Inventory playerInventory, Container inventory,
+            ContainerData propertyDelegate) {
         super(TurtleMod.TURTLE_SCREEN_HANDLER, syncId);
         checkContainerSize(inventory, TOTAL_TURTLE_SLOTS);
         this.inventory = inventory;
@@ -154,7 +155,8 @@ public class TurtleScreenHandler extends AbstractContainerMenu {
     @Override
     public boolean stillValid(Player player) {
         if (this.turtle != null) {
-            if (player.level() != this.turtle.getLevel()) return false;
+            if (player.level() != this.turtle.getLevel())
+                return false;
             return player.distanceToSqr(Vec3.atCenterOf(this.turtle.getBlockPos())) <= 100.0;
         }
         return this.inventory.stillValid(player);
@@ -216,7 +218,8 @@ public class TurtleScreenHandler extends AbstractContainerMenu {
 
         @Override
         public boolean stillValid(Player player) {
-            if (delegate == null || delegate.isRemoved()) return false;
+            if (delegate == null || delegate.isRemoved())
+                return false;
             return player.distanceToSqr(Vec3.atCenterOf(delegate.getBlockPos())) <= 100.0;
         }
 
