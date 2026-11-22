@@ -6,6 +6,7 @@ import com.turtlemod.screen.TurtleScreenHandler;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -108,6 +109,7 @@ public class TurtleScreen extends AbstractContainerScreen<TurtleScreenHandler> {
                 case LUMBERJACK -> "Tree Feller";
                 case FARMER -> "Harvester";
                 case FARM_CREATOR -> "Farm Creator";
+                case ROOM_CARVER -> "Room Carver";
                 case SENTRY -> "Sentry";
                 default -> app.name();
             };
@@ -124,6 +126,17 @@ public class TurtleScreen extends AbstractContainerScreen<TurtleScreenHandler> {
         } else if (app == AppType.BUILDER) {
             int w = this.menu.getConfigDistance();
             distStr = (w == 5 ? "5-Wide" : (w == 3 ? "3-Wide" : "1-Wide"));
+        } else if (app == AppType.ROOM_CARVER) {
+            int w = this.menu.getRoomWidth();
+            int h = this.menu.getRoomHeight();
+            int l = this.menu.getRoomLength();
+            int mode = this.menu.getRoomConfigMode();
+            distStr = switch (mode) {
+                case 1 -> "W: " + w;
+                case 2 -> "H: " + h;
+                case 3 -> "L: " + l;
+                default -> w + "x" + h + "x" + l;
+            };
         } else {
             distStr = this.menu.getConfigDistance() + "m";
         }
@@ -133,7 +146,7 @@ public class TurtleScreen extends AbstractContainerScreen<TurtleScreenHandler> {
 
         // 5. Status line: Centered below START/STOP buttons (y=70, x=38..106)
         String statusText = switch (status) {
-            case NO_TOOL -> (app == AppType.MINER || app == AppType.QUARRY ? "Need Pickaxe!" :
+            case NO_TOOL -> (app == AppType.MINER || app == AppType.QUARRY || app == AppType.ROOM_CARVER ? "Need Pickaxe!" :
                             (app == AppType.LUMBERJACK ? "Need Axe!" :
                             (app == AppType.FARMER || app == AppType.FARM_CREATOR ? "Need Hoe!" :
                             (app == AppType.BUILDER ? "Need Blocks!" :
@@ -190,10 +203,30 @@ public class TurtleScreen extends AbstractContainerScreen<TurtleScreenHandler> {
 
         // Hover over Distance Counter (startX + 54..90, startY + 35..49)
         if (mouseX >= startX + 54 && mouseX <= startX + 90 && mouseY >= startY + 35 && mouseY <= startY + 49) {
-            extractor.setComponentTooltipForNextFrame(this.font, List.of(
-                Component.literal("§6Target Distance: " + this.menu.getConfigDistance() + " blocks§r"),
-                Component.literal("§7Click [-] or [+] to configure§r")
-            ), mouseX, mouseY);
+            AppType app = AppType.fromIndex(this.menu.getAppTypeId());
+            if (app == AppType.ROOM_CARVER) {
+                int w = this.menu.getRoomWidth();
+                int h = this.menu.getRoomHeight();
+                int l = this.menu.getRoomLength();
+                int mode = this.menu.getRoomConfigMode();
+                String modeName = switch (mode) {
+                    case 1 -> "Editing Width";
+                    case 2 -> "Editing Height";
+                    case 3 -> "Editing Length";
+                    default -> "Presets";
+                };
+                extractor.setComponentTooltipForNextFrame(this.font, List.of(
+                    Component.literal("§6Room Carver Size: §e" + w + "W §7× §e" + h + "H §7× §e" + l + "L§r"),
+                    Component.literal("§aMode: " + modeName + " §8(Click to cycle)§r"),
+                    Component.literal("§7Height max: 10 | Width & Length max: 32§r"),
+                    Component.literal("§7Click [-] or [+] to adjust§r")
+                ), mouseX, mouseY);
+            } else {
+                extractor.setComponentTooltipForNextFrame(this.font, List.of(
+                    Component.literal("§6Target Distance: " + this.menu.getConfigDistance() + " blocks§r"),
+                    Component.literal("§7Click [-] or [+] to configure§r")
+                ), mouseX, mouseY);
+            }
         }
 
         // Hover over Status Line (startX + 38..106, startY + 68..79)
@@ -216,7 +249,7 @@ public class TurtleScreen extends AbstractContainerScreen<TurtleScreenHandler> {
             } else if (this.hoveredSlot.index == TurtleScreenHandler.TOOL_SLOT) {
                 AppType app = AppType.fromIndex(this.menu.getAppTypeId());
                 String req = switch (app) {
-                    case MINER, QUARRY -> "§eRequires a Pickaxe to mine§r";
+                    case MINER, QUARRY, ROOM_CARVER -> "§eRequires a Pickaxe to mine / carve§r";
                     case LUMBERJACK -> "§eRequires an Axe to fell trees§r";
                     case FARMER -> "§eRequires a Hoe to harvest crops§r";
                     case SENTRY -> "§eRequires a Sword to attack mobs§r";
@@ -233,5 +266,22 @@ public class TurtleScreen extends AbstractContainerScreen<TurtleScreenHandler> {
                 ), mouseX, mouseY);
             }
         }
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent clickEvent, boolean doubleClick) {
+        int startX = this.leftPos;
+        int startY = this.topPos;
+        double mouseX = clickEvent.x();
+        double mouseY = clickEvent.y();
+        if (clickEvent.button() == 0 && mouseX >= startX + 54 && mouseX <= startX + 90 && mouseY >= startY + 35 && mouseY <= startY + 49) {
+            if (this.menu.getAppTypeId() == AppType.ROOM_CARVER.ordinal()) {
+                if (this.minecraft != null && this.minecraft.gameMode != null) {
+                    this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, 5);
+                    return true;
+                }
+            }
+        }
+        return super.mouseClicked(clickEvent, doubleClick);
     }
 }

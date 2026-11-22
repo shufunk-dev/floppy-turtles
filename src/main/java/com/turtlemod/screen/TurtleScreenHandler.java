@@ -27,7 +27,7 @@ public class TurtleScreenHandler extends AbstractContainerMenu {
     private TurtleBlockEntity turtle;
 
     public TurtleScreenHandler(int syncId, Inventory playerInventory) {
-        this(syncId, playerInventory, new SimpleContainer(TOTAL_TURTLE_SLOTS), new SimpleContainerData(7));
+        this(syncId, playerInventory, new SimpleContainer(TOTAL_TURTLE_SLOTS), new SimpleContainerData(11));
     }
 
     public TurtleScreenHandler(int syncId, Inventory playerInventory, Container inventory, ContainerData propertyDelegate) {
@@ -105,6 +105,22 @@ public class TurtleScreenHandler extends AbstractContainerMenu {
 
     public int getConfigDistance() {
         return this.propertyDelegate.get(6);
+    }
+
+    public int getRoomWidth() {
+        return Math.max(1, this.propertyDelegate.get(7));
+    }
+
+    public int getRoomHeight() {
+        return Math.max(1, this.propertyDelegate.get(8));
+    }
+
+    public int getRoomLength() {
+        return Math.max(1, this.propertyDelegate.get(9));
+    }
+
+    public int getRoomConfigMode() {
+        return this.propertyDelegate.get(10);
     }
 
     public void setTurtle(TurtleBlockEntity newTurtle) {
@@ -237,7 +253,7 @@ public class TurtleScreenHandler extends AbstractContainerMenu {
 
         @Override
         public int getCount() {
-            return delegate != null ? delegate.getCount() : 7;
+            return delegate != null ? delegate.getCount() : 11;
         }
     }
 

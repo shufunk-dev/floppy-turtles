@@ -42,6 +42,7 @@ public class TurtleMod implements ModInitializer {
     public static final ResourceKey<Item> DISK_LUMBERJACK_KEY = ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(MOD_ID, "floppy_disk_lumberjack"));
     public static final ResourceKey<Item> DISK_FARMER_KEY = ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(MOD_ID, "floppy_disk_farmer"));
     public static final ResourceKey<Item> DISK_FARM_CREATOR_KEY = ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(MOD_ID, "floppy_disk_farm_creator"));
+    public static final ResourceKey<Item> DISK_ROOM_CARVER_KEY = ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(MOD_ID, "floppy_disk_room_carver"));
     public static final ResourceKey<Item> DISK_SENTRY_KEY = ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(MOD_ID, "floppy_disk_sentry"));
 
     // Block & Item
@@ -72,6 +73,7 @@ public class TurtleMod implements ModInitializer {
     public static final Item DISK_LUMBERJACK = new FloppyDiskItem(new Item.Properties().setId(DISK_LUMBERJACK_KEY).stacksTo(1), AppType.LUMBERJACK);
     public static final Item DISK_FARMER = new FloppyDiskItem(new Item.Properties().setId(DISK_FARMER_KEY).stacksTo(1), AppType.FARMER);
     public static final Item DISK_FARM_CREATOR = new FloppyDiskItem(new Item.Properties().setId(DISK_FARM_CREATOR_KEY).stacksTo(1), AppType.FARM_CREATOR);
+    public static final Item DISK_ROOM_CARVER = new FloppyDiskItem(new Item.Properties().setId(DISK_ROOM_CARVER_KEY).stacksTo(1), AppType.ROOM_CARVER);
     public static final Item DISK_SENTRY = new FloppyDiskItem(new Item.Properties().setId(DISK_SENTRY_KEY).stacksTo(1), AppType.SENTRY);
 
     // Item Group
@@ -88,6 +90,7 @@ public class TurtleMod implements ModInitializer {
                 output.accept(DISK_LUMBERJACK);
                 output.accept(DISK_FARMER);
                 output.accept(DISK_FARM_CREATOR);
+                output.accept(DISK_ROOM_CARVER);
                 output.accept(DISK_SENTRY);
             })
             .build();
@@ -122,6 +125,7 @@ public class TurtleMod implements ModInitializer {
         Registry.register(BuiltInRegistries.ITEM, DISK_LUMBERJACK_KEY, DISK_LUMBERJACK);
         Registry.register(BuiltInRegistries.ITEM, DISK_FARMER_KEY, DISK_FARMER);
         Registry.register(BuiltInRegistries.ITEM, DISK_FARM_CREATOR_KEY, DISK_FARM_CREATOR);
+        Registry.register(BuiltInRegistries.ITEM, DISK_ROOM_CARVER_KEY, DISK_ROOM_CARVER);
         Registry.register(BuiltInRegistries.ITEM, DISK_SENTRY_KEY, DISK_SENTRY);
 
         // Register Creative Tab

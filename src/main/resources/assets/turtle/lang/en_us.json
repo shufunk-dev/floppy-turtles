@@ -8,6 +8,7 @@
   "item.turtle.floppy_disk_lumberjack": "Floppy Disk (Tree Feller)",
   "item.turtle.floppy_disk_farmer": "Floppy Disk (Crop Harvester)",
   "item.turtle.floppy_disk_farm_creator": "Floppy Disk (Farm Creator)",
+  "item.turtle.floppy_disk_room_carver": "Floppy Disk (Room Carver)",
   "item.turtle.floppy_disk_sentry": "Floppy Disk (Mob Sentry)",
   "itemGroup.turtle": "Floppy Turtles",
   "container.turtle": "Turtle"
