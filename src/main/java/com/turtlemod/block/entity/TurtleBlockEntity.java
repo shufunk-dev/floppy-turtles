@@ -10,6 +10,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.CropBlock;
+import net.minecraft.block.FallingBlock;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.mob.HostileEntity;
@@ -69,6 +70,32 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     private int farmMoveStep = 0;
     private boolean isMoving = false;
 
+    public static final int[][] ROOM_PRESETS = {
+        {3, 3, 3},
+        {5, 5, 5},
+        {7, 4, 7},
+        {8, 4, 8},
+        {9, 5, 9},
+        {10, 5, 10},
+        {10, 10, 10},
+        {12, 5, 12},
+        {16, 5, 16},
+        {16, 8, 16},
+        {16, 10, 16},
+        {20, 6, 20},
+        {24, 8, 24},
+        {32, 6, 32},
+        {32, 10, 32}
+    };
+
+    private int roomWidth = 5;
+    private int roomHeight = 5;
+    private int roomLength = 5;
+    private int roomConfigMode = 0; // 0 = Preset, 1 = Width, 2 = Height, 3 = Length
+    private int excavatorSlice = 1; // dz (1 .. roomLength)
+    private int excavatorY = 4; // dy (roomHeight - 1 down to 0)
+    private int excavatorX = -2; // dx (minDx .. maxDx)
+
     private final PropertyDelegate propertyDelegate = new PropertyDelegate() {
         @Override
         public int get(int index) {
@@ -80,6 +107,10 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 case 4 -> getFacing().getIndex();
                 case 5 -> progress;
                 case 6 -> configDistance;
+                case 7 -> roomWidth;
+                case 8 -> roomHeight;
+                case 9 -> roomLength;
+                case 10 -> roomConfigMode;
                 default -> 0;
             };
         }
@@ -91,12 +122,16 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 case 1 -> maxFuel = value;
                 case 2 -> status = TurtleStatus.fromIndex(value);
                 case 6 -> configDistance = value;
+                case 7 -> roomWidth = Math.max(1, Math.min(32, value));
+                case 8 -> roomHeight = Math.max(1, Math.min(10, value));
+                case 9 -> roomLength = Math.max(1, Math.min(32, value));
+                case 10 -> roomConfigMode = (value >= 0 && value <= 3) ? value : 0;
             }
         }
 
         @Override
         public int size() {
-            return 7;
+            return 11;
         }
     };
 
@@ -155,7 +190,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
     public boolean hasRequiredTool(AppType app) {
         ItemStack tool = getToolStack();
         return switch (app) {
-            case MINER, QUARRY -> isPickaxe(tool);
+            case MINER, QUARRY, ROOM_CARVER -> isPickaxe(tool);
             case LUMBERJACK -> isAxe(tool);
             case FARMER, FARM_CREATOR -> isHoe(tool);
             case SENTRY -> isSword(tool);
@@ -246,6 +281,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                     this.farmIndex = 0;
                     this.farmRow = -1;
                     this.farmMoveStep = 0;
+                    resetRoomCarverCoordinates();
                 }
 
                 this.status = TurtleStatus.RUNNING;
@@ -264,7 +300,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             }
             case 2 -> { // PARAM -
                 AppType app = getAppType();
-                if (app == AppType.FARM_CREATOR) {
+                if (app == AppType.ROOM_CARVER) {
+                    adjustRoomDimensions(-1);
+                } else if (app == AppType.FARM_CREATOR) {
                     this.configDistance = Math.max(1, this.configDistance - 1);
                 } else if (app == AppType.BUILDER) {
                     if (this.configDistance == 5) this.configDistance = 3;
@@ -281,7 +319,9 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             }
             case 3 -> { // PARAM +
                 AppType app = getAppType();
-                if (app == AppType.FARM_CREATOR) {
+                if (app == AppType.ROOM_CARVER) {
+                    adjustRoomDimensions(1);
+                } else if (app == AppType.FARM_CREATOR) {
                     this.configDistance = Math.min(3, this.configDistance + 1);
                 } else if (app == AppType.BUILDER) {
                     if (this.configDistance == 1) this.configDistance = 3;
@@ -304,8 +344,19 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 this.farmIndex = 0;
                 this.farmRow = -1;
                 this.farmMoveStep = 0;
+                resetRoomCarverCoordinates();
                 this.status = TurtleStatus.IDLE;
                 markDirty();
+            }
+            case 5 -> { // TOGGLE CONFIG MODE
+                AppType app = getAppType();
+                if (app == AppType.ROOM_CARVER) {
+                    this.roomConfigMode = (this.roomConfigMode + 1) % 4;
+                    if (this.world != null) {
+                        this.world.playSound(null, this.pos, SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), SoundCategory.BLOCKS, 1.0f, 1.5f);
+                    }
+                    markDirty();
+                }
             }
         }
     }
@@ -365,6 +416,7 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
             case FARMER -> executeFarmer(serverWorld);
             case FARM_CREATOR -> executeFarmCreator(serverWorld);
             case SENTRY -> executeSentry(serverWorld);
+            case ROOM_CARVER -> executeRoomCarver(serverWorld);
             default -> {
                 this.status = TurtleStatus.IDLE;
                 markDirty();
@@ -583,6 +635,13 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         this.farmIndex = source.farmIndex;
         this.farmRow = source.farmRow;
         this.farmMoveStep = source.farmMoveStep;
+        this.roomWidth = source.roomWidth;
+        this.roomHeight = source.roomHeight;
+        this.roomLength = source.roomLength;
+        this.roomConfigMode = source.roomConfigMode;
+        this.excavatorSlice = source.excavatorSlice;
+        this.excavatorY = source.excavatorY;
+        this.excavatorX = source.excavatorX;
         this.actionCooldown = source.actionCooldown;
     }
 
@@ -1480,6 +1539,187 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         }
     }
 
+    private void executeRoomCarver(ServerWorld world) {
+        if (!hasRequiredTool(AppType.ROOM_CARVER)) {
+            this.status = TurtleStatus.NO_TOOL;
+            markDirty();
+            return;
+        }
+
+        if (this.excavatorSlice > this.roomLength) {
+            this.status = TurtleStatus.COMPLETED;
+            this.progress = 100;
+            world.playSound(null, this.pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+            markDirty();
+            return;
+        }
+
+        Direction facing = getFacing();
+        Direction right = facing.rotateYClockwise();
+
+        int minDx = -(this.roomWidth - 1) / 2;
+        int maxDx = minDx + this.roomWidth - 1;
+        int totalBlocks = this.roomWidth * this.roomHeight * this.roomLength;
+
+        // Skip up to 16 air/fluid blocks in one action to avoid idling across empty space
+        for (int step = 0; step < 16; step++) {
+            if (this.excavatorSlice > this.roomLength) {
+                this.status = TurtleStatus.COMPLETED;
+                this.progress = 100;
+                world.playSound(null, this.pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                markDirty();
+                return;
+            }
+
+            BlockPos targetPos = this.pos.offset(facing, this.excavatorSlice)
+                    .up(this.excavatorY)
+                    .offset(right, this.excavatorX);
+
+            BlockState state = world.getBlockState(targetPos);
+            boolean isBlockSolid = !state.isAir() && !state.isLiquid();
+
+            if (isBlockSolid) {
+                if (!consumeFuel(1)) return;
+
+                if (!dig(world, targetPos)) {
+                    if (this.status != TurtleStatus.NO_TOOL) {
+                        this.status = TurtleStatus.BLOCKED;
+                    }
+                    markDirty();
+                    return;
+                }
+
+                // If falling blocks (sand/gravel) fell into this position
+                int fallingGuard = 0;
+                while (world.getBlockState(targetPos).getBlock() instanceof FallingBlock && fallingGuard < 10) {
+                    dig(world, targetPos);
+                    fallingGuard++;
+                }
+
+                advanceRoomCarverCoordinates(minDx, maxDx, totalBlocks, world);
+                markDirty();
+                return; // 1 solid block mined per action cooldown
+            }
+
+            advanceRoomCarverCoordinates(minDx, maxDx, totalBlocks, world);
+        }
+        markDirty();
+    }
+
+    private void advanceRoomCarverCoordinates(int minDx, int maxDx, int totalBlocks, ServerWorld world) {
+        this.excavatorX++;
+        if (this.excavatorX > maxDx) {
+            this.excavatorX = minDx;
+            this.excavatorY--;
+            if (this.excavatorY < 0) {
+                // Completed slice
+                if (this.excavatorSlice % 5 == 0 || this.excavatorSlice == this.roomLength) {
+                    placeRoomTorch(world, this.excavatorSlice);
+                }
+                vacuumRoomDrops(world);
+                this.excavatorY = this.roomHeight - 1;
+                this.excavatorSlice++;
+            }
+        }
+
+        long completedBlocks = (long) (this.excavatorSlice - 1) * this.roomHeight * this.roomWidth
+                + (long) (this.roomHeight - 1 - this.excavatorY) * this.roomWidth
+                + (long) (this.excavatorX - minDx);
+        this.progress = totalBlocks > 0 ? (int) Math.min(100, Math.max(0, (completedBlocks * 100L) / totalBlocks)) : 0;
+    }
+
+    private void placeRoomTorch(ServerWorld world, int slice) {
+        Direction facing = getFacing();
+        BlockPos torchPos = this.pos.offset(facing, slice);
+        BlockState floorState = world.getBlockState(torchPos.down());
+
+        if (world.getBlockState(torchPos).isAir() && floorState.isSolid()) {
+            for (int i = TurtleScreenHandler.STORAGE_START; i < TurtleScreenHandler.STORAGE_START + TurtleScreenHandler.STORAGE_COUNT; i++) {
+                ItemStack stack = this.items.get(i);
+                if (!stack.isEmpty() && (stack.isOf(Items.TORCH) || stack.isOf(Items.SOUL_TORCH))) {
+                    BlockState torchState = stack.isOf(Items.SOUL_TORCH)
+                            ? Blocks.SOUL_TORCH.getDefaultState()
+                            : Blocks.TORCH.getDefaultState();
+                    world.setBlockState(torchPos, torchState, Block.NOTIFY_ALL);
+                    world.playSound(null, torchPos, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f);
+                    stack.decrement(1);
+                    if (stack.isEmpty()) {
+                        this.items.set(i, ItemStack.EMPTY);
+                    }
+                    markDirty();
+                    break;
+                }
+            }
+        }
+    }
+
+    private void vacuumRoomDrops(ServerWorld world) {
+        Direction facing = getFacing();
+        Direction right = facing.rotateYClockwise();
+        int minDx = -(this.roomWidth - 1) / 2;
+        int maxDx = minDx + this.roomWidth - 1;
+
+        BlockPos corner1 = this.pos.offset(facing, 1).offset(right, minDx);
+        BlockPos corner2 = this.pos.offset(facing, this.roomLength).up(this.roomHeight).offset(right, maxDx);
+        Box box = Box.enclosing(corner1, corner2).expand(1.0);
+
+        List<ItemEntity> items = world.getEntitiesByClass(ItemEntity.class, box, e -> e.isAlive());
+        for (ItemEntity itemEntity : items) {
+            ItemStack leftover = insertItem(itemEntity.getStack());
+            if (leftover.isEmpty()) {
+                itemEntity.discard();
+            } else {
+                itemEntity.setStack(leftover);
+            }
+        }
+    }
+
+    private int findClosestRoomPresetIndex() {
+        for (int i = 0; i < ROOM_PRESETS.length; i++) {
+            if (ROOM_PRESETS[i][0] == this.roomWidth &&
+                ROOM_PRESETS[i][1] == this.roomHeight &&
+                ROOM_PRESETS[i][2] == this.roomLength) {
+                return i;
+            }
+        }
+        int currentVol = this.roomWidth * this.roomHeight * this.roomLength;
+        int closestIdx = 1;
+        int minDiff = Integer.MAX_VALUE;
+        for (int i = 0; i < ROOM_PRESETS.length; i++) {
+            int presetVol = ROOM_PRESETS[i][0] * ROOM_PRESETS[i][1] * ROOM_PRESETS[i][2];
+            int diff = Math.abs(presetVol - currentVol);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestIdx = i;
+            }
+        }
+        return closestIdx;
+    }
+
+    private void adjustRoomDimensions(int delta) {
+        if (this.roomConfigMode == 0) { // Preset mode
+            int idx = findClosestRoomPresetIndex();
+            int newIdx = Math.max(0, Math.min(ROOM_PRESETS.length - 1, idx + delta));
+            this.roomWidth = ROOM_PRESETS[newIdx][0];
+            this.roomHeight = ROOM_PRESETS[newIdx][1];
+            this.roomLength = ROOM_PRESETS[newIdx][2];
+        } else if (this.roomConfigMode == 1) { // Width mode (1 .. 32)
+            this.roomWidth = Math.max(1, Math.min(32, this.roomWidth + delta));
+        } else if (this.roomConfigMode == 2) { // Height mode (1 .. 10)
+            this.roomHeight = Math.max(1, Math.min(10, this.roomHeight + delta));
+        } else if (this.roomConfigMode == 3) { // Length mode (1 .. 32)
+            this.roomLength = Math.max(1, Math.min(32, this.roomLength + delta));
+        }
+        resetRoomCarverCoordinates();
+        markDirty();
+    }
+
+    private void resetRoomCarverCoordinates() {
+        this.excavatorSlice = 1;
+        this.excavatorY = this.roomHeight - 1;
+        this.excavatorX = -(this.roomWidth - 1) / 2;
+    }
+
     // --- INVENTORY IMPLEMENTATION ---
 
     @Override
@@ -1527,6 +1767,11 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
                 this.farmIndex = 0;
                 this.farmRow = -1;
                 this.farmMoveStep = 0;
+                this.roomWidth = 5;
+                this.roomHeight = 5;
+                this.roomLength = 5;
+                this.roomConfigMode = 0;
+                resetRoomCarverCoordinates();
                 this.status = TurtleStatus.IDLE;
             }
         }
@@ -1576,6 +1821,13 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         view.putInt("farmIndex", this.farmIndex);
         view.putInt("farmRow", this.farmRow);
         view.putInt("farmMoveStep", this.farmMoveStep);
+        view.putInt("roomWidth", this.roomWidth);
+        view.putInt("roomHeight", this.roomHeight);
+        view.putInt("roomLength", this.roomLength);
+        view.putInt("roomConfigMode", this.roomConfigMode);
+        view.putInt("excavatorSlice", this.excavatorSlice);
+        view.putInt("excavatorY", this.excavatorY);
+        view.putInt("excavatorX", this.excavatorX);
     }
 
     @Override
@@ -1594,5 +1846,12 @@ public class TurtleBlockEntity extends BlockEntity implements Inventory, NamedSc
         this.farmIndex = view.getInt("farmIndex", 0);
         this.farmRow = view.getInt("farmRow", -1);
         this.farmMoveStep = view.getInt("farmMoveStep", 0);
+        this.roomWidth = view.getInt("roomWidth", 5);
+        this.roomHeight = view.getInt("roomHeight", 5);
+        this.roomLength = view.getInt("roomLength", 5);
+        this.roomConfigMode = view.getInt("roomConfigMode", 0);
+        this.excavatorSlice = view.getInt("excavatorSlice", 1);
+        this.excavatorY = view.getInt("excavatorY", 4);
+        this.excavatorX = view.getInt("excavatorX", -2);
     }
 }

@@ -59,6 +59,7 @@ Each software disk is color-coded with a distinct rainbow palette and programmed
 | **Tree Feller** | `LUMBERJACK` | 🟩 Forest Green | Axe | Performs 3D BFS trunk & branch felling on trees, collapses leaf canopies, auto-vacuums logs/saplings, and scales terrain without cave digging. |
 | **Crop Harvester** | `FARMER` | 🟨 Golden Yellow | Hoe | Sweeps a 9-wide crop swath, harvests mature crops (wheat, carrots, potatoes, beetroot), auto-replants seeds, and scales elevated farmland terraces. |
 | **Farm Creator** | `FARM_CREATOR` | 🩵 Aqua / Water Cyan | Hoe, Water Bucket, Seeds | Automatically constructs **1 to 3** fully hydrated, tilled, and seeded 9×9 crop plots with center water reservoirs; hovers safely over planted crops. |
+| **Room Carver** | `ROOM_CARVER` | 🟪 Vibrant Magenta | Pickaxe, Torches | Automatically carves out rectangular rooms (default **5×5×5**, configurable up to **10H × 32W × 32L**) into mountains or underground. Features quick presets and custom W/H/L dimension tuning, auto-torching, and item suction. |
 | **Mob Sentry** | `SENTRY` | 🟥 Crimson Red | Sword | 360° perimeter defense turret that engages all hostile monsters within 3m–10m, applies sword tier damage, and vacuums mob drops. |
 
 ---
@@ -95,6 +96,15 @@ Each software disk is color-coded with a distinct rainbow palette and programmed
 - Places a central water source block, tills all 80 surrounding dirt/grass blocks into farmland, and seeds them from inventory.
 - Smart seed sorting: uses seeds left-to-right from slots 3–11 (wheat seeds, carrot, potato, beetroot).
 - Safely hovers 1 block above crop level when moving forward so tilled land and planted crops are never crushed or scraped.
+
+#### 🪓 Room Carver (`ROOM_CARVER`)
+- Harrows and excavates custom-sized 3D rooms inside mountains, underground bases, or hills.
+- **Default 5×5×5 Room**: Perfectly sized starter rooms out of the box.
+- **Full Dimensional Customization**: Set dimensions up to **Height 10**, **Width 32**, and **Length 32** (kept within safe player simulation ranges to avoid chunk loading edge cases).
+- **Interactive Dimension Controls**: Click the LCD display to cycle between **Presets** mode and individual **Width (W)**, **Height (H)**, and **Length (L)** modes; use `[-]` and `[+]` to adjust.
+- **Top-Down Excavation & Sand Safety**: Excavates ceiling-first so loose gravel and sand fall down and are safely mined without getting trapped.
+- **Auto Illumination**: Places floor torches along the center path every 5 blocks and at the back wall if torches are provided.
+- **Vacuum Aura**: Sucks excavated blocks and items into turtle storage automatically.
 
 #### 🌾 Crop Harvester (`FARMER`)
 - Automatically hovers into position and sweeps a 9-wide swath across farmland.
@@ -141,6 +151,7 @@ Combine **1 Blank Floppy Disk** with the corresponding item in any crafting grid
 | **Tree Feller** | Blank Floppy Disk | Iron Axe |
 | **Crop Harvester** | Blank Floppy Disk | Iron Hoe |
 | **Farm Creator** | Blank Floppy Disk | Water Bucket |
+| **Room Carver** | Blank Floppy Disk | Oak Door |
 | **Mob Sentry** | Blank Floppy Disk | Iron Sword |
 
 ---

@@ -26,7 +26,7 @@ public class TurtleScreenHandler extends ScreenHandler {
     private TurtleBlockEntity turtle;
 
     public TurtleScreenHandler(int syncId, PlayerInventory playerInventory) {
-        this(syncId, playerInventory, new SimpleInventory(TOTAL_TURTLE_SLOTS), new ArrayPropertyDelegate(7));
+        this(syncId, playerInventory, new SimpleInventory(TOTAL_TURTLE_SLOTS), new ArrayPropertyDelegate(11));
     }
 
     public TurtleScreenHandler(int syncId, PlayerInventory playerInventory, Inventory inventory, PropertyDelegate propertyDelegate) {
@@ -104,6 +104,22 @@ public class TurtleScreenHandler extends ScreenHandler {
 
     public int getConfigDistance() {
         return this.propertyDelegate.get(6);
+    }
+
+    public int getRoomWidth() {
+        return this.propertyDelegate.get(7);
+    }
+
+    public int getRoomHeight() {
+        return this.propertyDelegate.get(8);
+    }
+
+    public int getRoomLength() {
+        return this.propertyDelegate.get(9);
+    }
+
+    public int getRoomConfigMode() {
+        return this.propertyDelegate.get(10);
     }
 
     public void setTurtle(TurtleBlockEntity newTurtle) {
@@ -236,7 +252,7 @@ public class TurtleScreenHandler extends ScreenHandler {
 
         @Override
         public int size() {
-            return delegate != null ? delegate.size() : 7;
+            return delegate != null ? delegate.size() : 11;
         }
     }
 

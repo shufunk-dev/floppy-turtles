@@ -4,6 +4,7 @@ import com.turtlemod.app.AppType;
 import com.turtlemod.app.TurtleStatus;
 import com.turtlemod.screen.TurtleScreenHandler;
 import net.minecraft.client.gl.RenderPipelines;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -106,6 +107,7 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
                 case LUMBERJACK -> "Tree Feller";
                 case FARMER -> "Harvester";
                 case FARM_CREATOR -> "Farm Creator";
+                case ROOM_CARVER -> "Room Carver";
                 case SENTRY -> "Sentry";
                 default -> app.name();
             };
@@ -122,6 +124,17 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
         } else if (app == AppType.BUILDER) {
             int w = this.handler.getConfigDistance();
             distStr = (w == 5 ? "5-Wide" : (w == 3 ? "3-Wide" : "1-Wide"));
+        } else if (app == AppType.ROOM_CARVER) {
+            int w = this.handler.getRoomWidth();
+            int h = this.handler.getRoomHeight();
+            int l = this.handler.getRoomLength();
+            int mode = this.handler.getRoomConfigMode();
+            distStr = switch (mode) {
+                case 1 -> "W: " + w;
+                case 2 -> "H: " + h;
+                case 3 -> "L: " + l;
+                default -> w + "x" + h + "x" + l;
+            };
         } else {
             distStr = this.handler.getConfigDistance() + "m";
         }
@@ -131,7 +144,7 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
 
         // 5. Status line: Centered below START/STOP buttons (y=70, x=38..106)
         String statusText = switch (status) {
-            case NO_TOOL -> (app == AppType.MINER || app == AppType.QUARRY ? "Need Pickaxe!" :
+            case NO_TOOL -> (app == AppType.MINER || app == AppType.QUARRY || app == AppType.ROOM_CARVER ? "Need Pickaxe!" :
                             (app == AppType.LUMBERJACK ? "Need Axe!" :
                             (app == AppType.FARMER || app == AppType.FARM_CREATOR ? "Need Hoe!" :
                             (app == AppType.BUILDER ? "Need Blocks!" :
@@ -194,10 +207,30 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
 
         // Hover over Distance Counter (startX + 54..90, startY + 35..49)
         if (x >= startX + 54 && x <= startX + 90 && y >= startY + 35 && y <= startY + 49) {
-            context.drawTooltip(this.textRenderer, java.util.List.of(
-                Text.literal("§6Target Distance: " + this.handler.getConfigDistance() + " blocks§r"),
-                Text.literal("§7Click [-] or [+] to configure§r")
-            ), x, y);
+            AppType app = AppType.fromIndex(this.handler.getAppTypeId());
+            if (app == AppType.ROOM_CARVER) {
+                int w = this.handler.getRoomWidth();
+                int h = this.handler.getRoomHeight();
+                int l = this.handler.getRoomLength();
+                int mode = this.handler.getRoomConfigMode();
+                String modeName = switch (mode) {
+                    case 1 -> "Editing Width";
+                    case 2 -> "Editing Height";
+                    case 3 -> "Editing Length";
+                    default -> "Presets";
+                };
+                context.drawTooltip(this.textRenderer, java.util.List.of(
+                    Text.literal("§6Room Carver Size: §e" + w + "W §7× §e" + h + "H §7× §e" + l + "L§r"),
+                    Text.literal("§aMode: " + modeName + " §8(Click to cycle)§r"),
+                    Text.literal("§7Height max: 10 | Width & Length max: 32§r"),
+                    Text.literal("§7Click [-] or [+] to adjust§r")
+                ), x, y);
+            } else {
+                context.drawTooltip(this.textRenderer, java.util.List.of(
+                    Text.literal("§6Target Distance: " + this.handler.getConfigDistance() + " blocks§r"),
+                    Text.literal("§7Click [-] or [+] to configure§r")
+                ), x, y);
+            }
         }
 
         // Hover over Status Line (startX + 38..106, startY + 68..79)
@@ -220,7 +253,7 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
             } else if (this.focusedSlot.id == TurtleScreenHandler.TOOL_SLOT) {
                 AppType app = AppType.fromIndex(this.handler.getAppTypeId());
                 String req = switch (app) {
-                    case MINER, QUARRY -> "§eRequires a Pickaxe to mine§r";
+                    case MINER, QUARRY, ROOM_CARVER -> "§eRequires a Pickaxe to mine / carve§r";
                     case LUMBERJACK -> "§eRequires an Axe to fell trees§r";
                     case FARMER -> "§eRequires a Hoe to harvest crops§r";
                     case SENTRY -> "§eRequires a Sword to attack mobs§r";
@@ -237,5 +270,22 @@ public class TurtleScreen extends HandledScreen<TurtleScreenHandler> {
                 ), x, y);
             }
         }
+    }
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubleClick) {
+        int startX = this.x;
+        int startY = this.y;
+        double mouseX = click.x();
+        double mouseY = click.y();
+        if (click.button() == 0 && mouseX >= startX + 54 && mouseX <= startX + 90 && mouseY >= startY + 35 && mouseY <= startY + 49) {
+            if (this.handler.getAppTypeId() == AppType.ROOM_CARVER.ordinal()) {
+                if (this.client != null && this.client.interactionManager != null) {
+                    this.client.interactionManager.clickButton(this.handler.syncId, 5);
+                    return true;
+                }
+            }
+        }
+        return super.mouseClicked(click, doubleClick);
     }
 }
