@@ -162,8 +162,8 @@ Combine **1 Blank Floppy Disk** with the corresponding item in any crafting grid
 
 | Minecraft Version | Git Branch | Fabric Loader | Fabric API | Output JAR |
 | :--- | :--- | :--- | :--- | :--- |
-| **1.21.11** | `main` | `>=0.19.3` | `0.141.6+1.21.11` | `floppy-turtles-1.0.1+1.21.11.jar` |
-| **26.3** | `26.3` | `>=0.19.5` | `0.166.2+26.3` | `floppy-turtles-1.0.1+26.3.jar` |
+| **1.21.11** | `main` | `>=0.19.3` | `0.141.6+1.21.11` | `floppy-turtles-1.0.2+1.21.11.jar` |
+| **26.3** | `26.3` | `>=0.19.5` | `0.166.2+26.3` | `floppy-turtles-1.0.2+26.3.jar` |
 
 - **Java**: `21` or newer
 
@@ -179,12 +179,12 @@ cd floppy-turtles
 # Build for Minecraft 1.21.11:
 git checkout main
 ./gradlew build
-# Built JAR: build/libs/floppy-turtles-1.0.1+1.21.11.jar
+# Built JAR: build/libs/floppy-turtles-1.0.2+1.21.11.jar
 
 # Build for Minecraft 26.3:
 git checkout 26.3
 ./gradlew build
-# Built JAR: build/libs/floppy-turtles-1.0.1+26.3.jar
+# Built JAR: build/libs/floppy-turtles-1.0.2+26.3.jar
 ```
 
 ### Launch Development Environment
